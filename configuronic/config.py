@@ -1,11 +1,11 @@
-from collections import deque
-from types import ModuleType
-import yaml
 import importlib.util
 import inspect
-from typing import Any, Callable, Dict, Tuple, List
 import posixpath
+from collections import deque
+from types import ModuleType
+from typing import Any, Callable, Dict, List, Tuple
 
+import yaml
 
 INSTANTIATE_PREFIX = '@'
 RELATIVE_PATH_PREFIX = '.'

@@ -1,6 +1,6 @@
 import configuronic as cfn
-from configuronic.tests.support_package.subpkg.a import A
 from configuronic.tests.support_package.b import B
+from configuronic.tests.support_package.subpkg.a import A
 
 a_cfg_value1 = cfn.Config(A, value=1)
 a_cfg_value2 = cfn.Config(A, value=2)

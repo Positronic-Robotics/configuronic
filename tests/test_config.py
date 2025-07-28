@@ -454,8 +454,8 @@ def test_override_with_single_dot_enum_relative_path():
 
 
 def test_override_with_multiple_dots_relative_path():
-    from configuronic.tests.support_package.subpkg.a import A
     from configuronic.tests.support_package.b import B
+    from configuronic.tests.support_package.subpkg.a import A
 
     env_cfg = cfn.Config(Env, camera=A)
 

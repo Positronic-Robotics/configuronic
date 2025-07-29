@@ -26,8 +26,7 @@ keywords = ["configuration", "config", "dependency-injection", "yaml"]
 requires-python = ">=3.10"
 dependencies = [
     "PyYAML",
-    "fire",
-    "twine>=6.1.0",
+    "fire"
 ]
 
 [project.optional-dependencies]
@@ -36,7 +35,9 @@ dev = [
     "pytest-cov",
     "pytest-xdist",
     "ruff",
-    "numpy"  # for examples
+    "numpy",  # for examples
+    "twine>=6.1.0",
+    "build>=1.2.2.post1"
 ]
 
 [project.urls]
@@ -69,6 +70,8 @@ select = [
 [tool.ruff.format]
 quote-style = "single"
 indent-style = "space"
+docstring-code-format = true
+preview = true
 
 [tool.pytest.ini_options]
 minversion = "6.0"
@@ -117,8 +120,3 @@ directory = "htmlcov"
 
 [tool.coverage.xml]
 output = "coverage.xml"
-
-[dependency-groups]
-dev = [
-    "build>=1.2.2.post1",
-]

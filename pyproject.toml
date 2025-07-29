@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -36,8 +36,6 @@ dev = [
     "pytest-xdist",
     "ruff",
     "numpy",  # for examples
-    "twine>=6.1.0",
-    "build>=1.2.2.post1",
     "ipython",  # for tests
 ]
 

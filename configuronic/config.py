@@ -39,7 +39,7 @@ def _determine_module_by_path(path: str) -> tuple[str, str]:
         except ModuleNotFoundError:
             object_path.appendleft(module_path.pop())
 
-    raise ImportError(f"Module not found for path: {path}")
+    raise ImportError(f'Module not found for path: {path}')
 
 
 def _get_object_from_path(module: Any, object_path: str) -> Any:
@@ -66,7 +66,7 @@ def _import_object_from_path(path: str) -> Any:
     assert path.startswith(INSTANTIATE_PREFIX), f"Path must start with '{INSTANTIATE_PREFIX}'"
 
     # Remove the leading '@'
-    path = path[len(INSTANTIATE_PREFIX):]
+    path = path[len(INSTANTIATE_PREFIX) :]
 
     module_path, object_path = _determine_module_by_path(path)
 
@@ -79,17 +79,18 @@ def _import_object_from_path(path: str) -> Any:
 def _get_base_path_from_default(default: Any) -> str:
     """Extract base path from different types of default values."""
     if isinstance(default, Config):
-        return default._creator_module.__name__ + '.' + "stub_name"
+        return default._creator_module.__name__ + '.' + 'stub_name'
     elif isinstance(default, str):
         return default.lstrip(INSTANTIATE_PREFIX)
-    elif hasattr(default, "__module__") and hasattr(default, "__name__"):
-        return f"{default.__module__}.{default.__name__}"
-    elif hasattr(default, "__class__") and hasattr(default, "name"):  # Handle Enum values
+    elif hasattr(default, '__module__') and hasattr(default, '__name__'):
+        return f'{default.__module__}.{default.__name__}'
+    elif hasattr(default, '__class__') and hasattr(default, 'name'):  # Handle Enum values
         enum_class = default.__class__
-        return f"{enum_class.__module__}.{enum_class.__qualname__}.{default.name}"
+        return f'{enum_class.__module__}.{enum_class.__qualname__}.{default.name}'
     else:
-        raise ValueError("Default value must be Config, import string, "
-                         "an object with __module__ and __name__, or an Enum value")
+        raise ValueError(
+            'Default value must be Config, import string, an object with __module__ and __name__, or an Enum value'
+        )
 
 
 def _construct_relative_path(value: str, base_path: str):
@@ -98,7 +99,7 @@ def _construct_relative_path(value: str, base_path: str):
         if value[leading] != RELATIVE_PATH_PREFIX:
             break
 
-    assert '🤷‍♂️' not in value, "Configuronic does not support relative imports with 🤷‍♂️. Sorry 🤷‍♂️"
+    assert '🤷‍♂️' not in value, 'Configuronic does not support relative imports with 🤷‍♂️. Sorry 🤷‍♂️'
     value = '🤷‍♂️' * leading + value[leading:]
 
     path = base_path + value
@@ -111,11 +112,11 @@ def _construct_relative_path(value: str, base_path: str):
 def _resolve_relative_import(value: str, default: Any) -> Any:
     """Resolve a relative import path (starting with '.')."""
     if default is None:
-        raise ValueError("Relative import used with no default value")
+        raise ValueError('Relative import used with no default value')
 
     base_path = _get_base_path_from_default(default)
     new_path = _construct_relative_path(value, base_path)
-    return _import_object_from_path(f"{INSTANTIATE_PREFIX}{new_path}")
+    return _import_object_from_path(f'{INSTANTIATE_PREFIX}{new_path}')
 
 
 def _resolve_value(value: Any, default: Any | None = None) -> Any:
@@ -134,8 +135,8 @@ def _resolve_value(value: Any, default: Any | None = None) -> Any:
     """
     if isinstance(value, str):
         if value.startswith(INSTANTIATE_PREFIX):
-            if value[len(INSTANTIATE_PREFIX):].startswith(INSTANTIATE_PREFIX):
-                return value[len(INSTANTIATE_PREFIX):]
+            if value[len(INSTANTIATE_PREFIX) :].startswith(INSTANTIATE_PREFIX):
+                return value[len(INSTANTIATE_PREFIX) :]
             else:
                 return _import_object_from_path(value)
         if value.startswith(RELATIVE_PATH_PREFIX) and not isinstance(default, str):
@@ -154,7 +155,7 @@ def _get_value(obj, key):
     elif isinstance(obj, dict):
         return obj[key]
     else:
-        raise ConfigError(f"Cannot get value of {obj} with key {key}")
+        raise ConfigError(f'Cannot get value of {obj} with key {key}')
 
 
 def _set_value(obj, key, value):
@@ -163,11 +164,11 @@ def _set_value(obj, key, value):
     elif isinstance(obj, list):
         obj[int(key)] = value
     elif isinstance(obj, tuple):
-        raise NotImplementedError("Overriding tuple values is not implemented")
+        raise NotImplementedError('Overriding tuple values is not implemented')
     elif isinstance(obj, dict):
         obj[key] = value
     else:
-        raise ConfigError(f"Cannot set value of {obj} with key {key}")
+        raise ConfigError(f'Cannot set value of {obj} with key {key}')
 
 
 def _get_creator_module() -> ModuleType:
@@ -175,20 +176,20 @@ def _get_creator_module() -> ModuleType:
     # current frame: this function
     # current frame back: place where this function is called from
     # current frame back back: place one level upperer
-    assert current_frame is not None, "Current frame is None. Do your python interpreter support frames?"
-    assert current_frame.f_back is not None, "Current frame back is None. Should not happen."
-    assert current_frame.f_back.f_back is not None, \
-        "Current frame back back is None. This function was probably called from python interpreter."
+    assert current_frame is not None, 'Current frame is None. Do your python interpreter support frames?'
+    assert current_frame.f_back is not None, 'Current frame back is None. Should not happen.'
+    assert current_frame.f_back.f_back is not None, (
+        'Current frame back back is None. This function was probably called from python interpreter.'
+    )
 
     module = inspect.getmodule(current_frame.f_back.f_back)
 
-    assert module is not None, "Module is None. Should not happen."
+    assert module is not None, 'Module is None. Should not happen.'
 
     return module
 
 
 class Config:
-
     def __init__(self, target, *args, **kwargs):
         """
         Initialize a Config object.
@@ -216,7 +217,7 @@ class Config:
             >>> res = cfn.Config(sum, a=1, b=2).instantiate()
             >>> assert res == 3
         """
-        assert callable(target), f"Target must be callable, got object of type {type(target)}."
+        assert callable(target), f'Target must be callable, got object of type {type(target)}.'
         self.target = target
         self.args = list(args)  # TODO: cover argument override with tests
         self.kwargs = kwargs
@@ -256,7 +257,7 @@ class Config:
             for i, key in enumerate(key_list[:-1]):
                 current_obj = _get_value(current_obj, key)
                 if current_obj is None:
-                    path_to_not_found_arg = '.'.join(key_list[:i + 1])
+                    path_to_not_found_arg = '.'.join(key_list[: i + 1])
                     raise ConfigError(f"Argument '{path_to_not_found_arg}' not found in config")
 
             _set_value(current_obj, key_list[-1], value)
@@ -313,7 +314,7 @@ class Config:
             try:
                 if isinstance(value, Config):
                     return value._instantiate_internal(path + f'{key}.')
-                elif isinstance(value, list| tuple):
+                elif isinstance(value, list | tuple):
                     return type(value)(_instantiate_value(item, f'{key}[{i}]', path) for i, item in enumerate(value))
                 elif isinstance(value, dict):
                     return {k: _instantiate_value(v, f'{key}["{k}"]', path) for k, v in value.items()}
@@ -336,10 +337,10 @@ class Config:
     def _to_dict(self) -> dict[str, Any]:
         res = {}
 
-        res["@target"] = f'{INSTANTIATE_PREFIX}{self.target.__module__}.{self.target.__name__}'
+        res['@target'] = f'{INSTANTIATE_PREFIX}{self.target.__module__}.{self.target.__name__}'
         args = [_to_dict(arg) for arg in self.args]
         if len(args) > 0:
-            res["*args"] = args
+            res['*args'] = args
         kwargs = {key: _to_dict(value) for key, value in self.kwargs.items()}
         if len(kwargs) > 0:
             res.update(kwargs)
@@ -447,8 +448,10 @@ def config(**kwargs) -> Callable[[Callable], Config]:
         >>> res = sum.override(a=1, b=2).instantiate()
         >>> assert res == 3
     """
+
     def _config_decorator(target):
         return Config(target, **kwargs)
+
     return _config_decorator
 
 
@@ -478,9 +481,9 @@ def cli(config: Config):
                 print(overriden_config.target.__doc__)
                 print('=' * 140)
 
-            print("Config:")
+            print('Config:')
             for arg in get_required_args(overriden_config):
-                print(f"{arg}: <REQUIRED>")
+                print(f'{arg}: <REQUIRED>')
             print()
             print(str(overriden_config))
         else:

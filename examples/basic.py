@@ -28,5 +28,5 @@ def print_exp_moving_average(sequence, alpha=0.1):
 
 main = cfn.Config(print_exp_moving_average, sequence=noisy_sin_01)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     cfn.cli(main)

@@ -37,7 +37,8 @@ dev = [
     "ruff",
     "numpy",  # for examples
     "twine>=6.1.0",
-    "build>=1.2.2.post1"
+    "build>=1.2.2.post1",
+    "ipython",  # for tests
 ]
 
 [project.urls]

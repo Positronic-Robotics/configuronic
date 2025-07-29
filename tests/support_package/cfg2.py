@@ -7,5 +7,10 @@ a_nested_b_value1 = a_cfg_value1.override(value=b_cfg_value1)
 
 
 @cfn.config()
+def return1():
+    return 1
+
+
+@cfn.config()
 def return2():
     return 2

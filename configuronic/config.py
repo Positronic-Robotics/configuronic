@@ -79,7 +79,10 @@ def _import_object_from_path(path: str) -> Any:
 def _get_base_path_from_default(default: Any) -> str:
     """Extract base path from different types of default values."""
     if isinstance(default, Config):
-        return default._creator_module.__name__ + '.' + 'stub_name'
+        assert default._creator_module is not None, \
+            "Config was created in an unknown module. Probably in IPython interactive shell. " \
+            "Consider moving the config to a module."
+        return default._creator_module.__name__ + '.' + "stub_name"
     elif isinstance(default, str):
         return default.lstrip(INSTANTIATE_PREFIX)
     elif hasattr(default, '__module__') and hasattr(default, '__name__'):
@@ -171,7 +174,7 @@ def _set_value(obj, key, value):
         raise ConfigError(f'Cannot set value of {obj} with key {key}')
 
 
-def _get_creator_module() -> ModuleType:
+def _get_creator_module() -> ModuleType | None:
     current_frame = inspect.currentframe()
     # current frame: this function
     # current frame back: place where this function is called from
@@ -183,8 +186,6 @@ def _get_creator_module() -> ModuleType:
     )
 
     module = inspect.getmodule(current_frame.f_back.f_back)
-
-    assert module is not None, 'Module is None. Should not happen.'
 
     return module
 
@@ -450,8 +451,9 @@ def config(**kwargs) -> Callable[[Callable], Config]:
     """
 
     def _config_decorator(target):
-        return Config(target, **kwargs)
-
+        config = Config(target, **kwargs)
+        config._creator_module = _get_creator_module()
+        return config
     return _config_decorator
 
 

@@ -446,7 +446,7 @@ def test_override_with_multiple_dots_relative_path():
     assert env_obj.camera is B
 
 
-def test_override_with_dot_from_cfg_module_applies_replative_to_cfg_module():
+def test_override_with_dot_from_cfg_module_applies_relative_to_cfg_module():
     from tests.support_package.cfg import a_cfg_value1
 
     env_cfg = cfn.Config(Env, camera=a_cfg_value1)
@@ -456,7 +456,7 @@ def test_override_with_dot_from_cfg_module_applies_replative_to_cfg_module():
     assert env_obj.camera.value == 2
 
 
-def test_override_with_dot_from_copied_config_applies_replative_to_cfg_module():
+def test_override_with_dot_from_copied_config_applies_relative_to_cfg_module():
     from tests.support_package.cfg2 import a_cfg_value1_copy
 
     env_cfg = cfn.Config(Env, camera=a_cfg_value1_copy)
@@ -466,7 +466,17 @@ def test_override_with_dot_from_copied_config_applies_replative_to_cfg_module():
     assert env_obj.camera == 2
 
 
-def test_config_callable_with_dot_from_copied_config_applies_replative_to_cfg_module():
+def test_override_with_dot_decorator_config_applies_relative_to_cfg_module():
+    from tests.support_package.cfg2 import return1
+
+    env_cfg = cfn.Config(Env, camera=return1)
+
+    env_obj = env_cfg.override(camera=".return2").instantiate()
+
+    assert env_obj.camera == 2
+
+
+def test_config_callable_with_dot_from_copied_config_applies_relative_to_cfg_module():
     from tests.support_package.cfg2 import a_cfg_value1_copy
 
     env_cfg = cfn.Config(Env, camera=a_cfg_value1_copy)
@@ -476,7 +486,7 @@ def test_config_callable_with_dot_from_copied_config_applies_replative_to_cfg_mo
     assert env_obj.camera == 2
 
 
-def test_override_nesetd_value_with_dot_from_copied_config_applies_replative_to_cfg_module():
+def test_override_nesetd_value_with_dot_from_copied_config_applies_relative_to_cfg_module():
     from tests.support_package.cfg2 import a_nested_b_value1
 
     env_cfg = cfn.Config(Env, camera=a_nested_b_value1)
@@ -486,7 +496,7 @@ def test_override_nesetd_value_with_dot_from_copied_config_applies_replative_to_
     assert env_obj.camera.value.value == 2
 
 
-def test_override_with_dot_from_overriden_config_applies_replative_to_cfg_module():
+def test_override_with_dot_from_overriden_config_applies_relative_to_cfg_module():
     from tests.support_package.cfg2 import a_cfg_value1_override_value3
 
     env_cfg = cfn.Config(Env, camera=a_cfg_value1_override_value3)
@@ -823,5 +833,15 @@ def test_escape_at_sign_with_multiple_at_signs():
     assert result == '@@three_at_signs'
 
 
-if __name__ == '__main__':
+def test_config_args_kwargs_overlap_produces_error():
+    def func(a, b):
+        return a + b
+
+    func = cfn.Config(func, 1, 2, b=3)
+
+    with pytest.raises(TypeError, match=".* got multiple values for argument 'b'.*"):
+        func()
+
+
+if __name__ == "__main__":
     pytest.main()

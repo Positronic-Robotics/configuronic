@@ -63,7 +63,9 @@ pip install configuronic
 ```bash
 git clone https://github.com/positronic/configuronic.git
 cd configuronic
-uv pip install -e .
+uv venv -p 3.10
+source .venv/bin/activate
+uv pip install -e .[dev]
 ```
 
 ## 🧠 Core Concepts

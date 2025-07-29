@@ -66,7 +66,7 @@ def _import_object_from_path(path: str) -> Any:
     assert path.startswith(INSTANTIATE_PREFIX), f"Path must start with '{INSTANTIATE_PREFIX}'"
 
     # Remove the leading '@'
-    path = path[len(INSTANTIATE_PREFIX) :]
+    path = path[len(INSTANTIATE_PREFIX):]
 
     module_path, object_path = _determine_module_by_path(path)
 
@@ -135,8 +135,8 @@ def _resolve_value(value: Any, default: Any | None = None) -> Any:
     """
     if isinstance(value, str):
         if value.startswith(INSTANTIATE_PREFIX):
-            if value[len(INSTANTIATE_PREFIX) :].startswith(INSTANTIATE_PREFIX):
-                return value[len(INSTANTIATE_PREFIX) :]
+            if value[len(INSTANTIATE_PREFIX):].startswith(INSTANTIATE_PREFIX):
+                return value[len(INSTANTIATE_PREFIX):]
             else:
                 return _import_object_from_path(value)
         if value.startswith(RELATIVE_PATH_PREFIX) and not isinstance(default, str):

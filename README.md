@@ -1,9 +1,9 @@
 # Configuronic
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI version](https://badge.fury.io/py/configuronic.svg)](https://badge.fury.io/py/configuronic)
-**FIXME: Add tests**
+[![Tests](https://github.com/Positronic-Robotics/configuronic/workflows/Tests/badge.svg)](https://github.com/Positronic-Robotics/configuronic/actions)
 
 **Configuronic** is a simple yet powerful "Configuration as Code" library designed for modern Python applications, particularly in robotics, machine learning, and complex system configurations. Born from the need for a cleaner alternative to existing configuration frameworks, configuronic embraces Python's native syntax while providing powerful CLI integration and hierarchical configuration management.
 

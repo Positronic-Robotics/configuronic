@@ -26,7 +26,8 @@ keywords = ["configuration", "config", "dependency-injection", "yaml"]
 requires-python = ">=3.10"
 dependencies = [
     "PyYAML",
-    "fire"
+    "fire",
+    "twine>=6.1.0",
 ]
 
 [project.optional-dependencies]
@@ -49,7 +50,7 @@ include = ["configuronic*"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py38"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = [
@@ -116,3 +117,8 @@ directory = "htmlcov"
 
 [tool.coverage.xml]
 output = "coverage.xml"
+
+[dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
+]

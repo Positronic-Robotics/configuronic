@@ -2,8 +2,9 @@ import importlib.util
 import inspect
 import posixpath
 from collections import deque
+from collections.abc import Callable
 from types import ModuleType
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any
 
 import yaml
 
@@ -26,7 +27,7 @@ def _to_dict(obj):
         return obj
 
 
-def _determine_module_by_path(path: str) -> Tuple[str, str]:
+def _determine_module_by_path(path: str) -> tuple[str, str]:
     module_path = path.split('.')
     object_path = deque([])
 
@@ -87,9 +88,8 @@ def _get_base_path_from_default(default: Any) -> str:
         enum_class = default.__class__
         return f"{enum_class.__module__}.{enum_class.__qualname__}.{default.name}"
     else:
-        raise ValueError(
-            "Default value must be Config, import string, an object with __module__ and __name__, or an Enum value"
-        )
+        raise ValueError("Default value must be Config, import string, "
+                         "an object with __module__ and __name__, or an Enum value")
 
 
 def _construct_relative_path(value: str, base_path: str):
@@ -313,7 +313,7 @@ class Config:
             try:
                 if isinstance(value, Config):
                     return value._instantiate_internal(path + f'{key}.')
-                elif isinstance(value, (list, tuple)):
+                elif isinstance(value, list| tuple):
                     return type(value)(_instantiate_value(item, f'{key}[{i}]', path) for i, item in enumerate(value))
                 elif isinstance(value, dict):
                     return {k: _instantiate_value(v, f'{key}["{k}"]', path) for k, v in value.items()}
@@ -333,7 +333,7 @@ class Config:
 
         return self.target(*instantiated_args, **instantiated_kwargs)
 
-    def _to_dict(self) -> Dict[str, Any]:
+    def _to_dict(self) -> dict[str, Any]:
         res = {}
 
         res["@target"] = f'{INSTANTIATE_PREFIX}{self.target.__module__}.{self.target.__name__}'
@@ -396,7 +396,7 @@ class Config:
         return self.override(**kwargs).instantiate()
 
 
-def get_required_args(config: Config) -> List[str]:
+def get_required_args(config: Config) -> list[str]:
     """
     Get the list of required arguments to instantiate the target callable.
 

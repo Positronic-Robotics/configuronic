@@ -400,7 +400,47 @@ Get list of required arguments for a configuration.
 
 ## 💡 Best Practices
 
-### 1. Create Separate Modules for Configurations
+### 1. Avoid Positional Arguments (`*args`) ⚠️
+
+> **Warning:** Configuronic has limited support for positional arguments (`*args`). Use them only in exceptional cases (like functions that accept variable-length lists) and always use explicit `cfn.Config()` construction, never the decorator.
+
+**Problems with positional arguments:**
+
+1. **Implicit and unclear** - Hard to understand what arguments represent:
+   ```python
+   # ❌ Unclear what 1, 2, 3 represent
+   func = cfn.Config(func, 1, 2, 3)
+   ```
+
+2. **Fragile** - Changing argument order breaks all configurations:
+   ```python
+   # ❌ If you change parameter order, all configs break
+   @cfn.config("robot", "camera")
+   def compose(camera, robot):  # Swapped order!
+       ...
+   ```
+
+3. **Ambiguous override behavior** - Unclear what `override()` should do:
+   ```python
+   # ❌ What should sum_with45 contain? [4, 5] or [1, 2, 3, 4, 5]?
+   sum_123 = cfn.Config(sum, 1, 2, 3)
+   sum_with45 = sum_123.override(4, 5)
+   ```
+
+**Recommended approach:**
+```python
+# ✅ Use keyword arguments for clarity
+config = cfn.Config(func, param1=1, param2=2, param3=3)
+
+# ✅ Only use *args for functions designed for them
+@cfn.config()  # No positional args in decorator
+def sum_all(*numbers):
+    return sum(numbers)
+
+variadic_sum = cfn.Config(sum_all, 1, 2, 3)  # Explicit Config only
+```
+
+### 2. Create Separate Modules for Configurations
 If you don't want your business logic modules to depend on `configuronic`, it's wise to have a separate package for configurations.
 ```python
 # configs/models.py
@@ -412,7 +452,7 @@ from .models import transformer_base
 training_pipeline = cfn.Config(TrainingPipeline, model=transformer_base)
 ```
 
-### 2. Import Inside Configuration Functions
+### 3. Import Inside Configuration Functions
 In robotic applications, some configurations may depend on parituclar hardware and Python packages that provide drivers, that are not always available. If you don't want to force your users to install all of them, consider making imports inside the functions that you configure.
 ```python
 @cfn.config()
@@ -423,7 +463,7 @@ def create_model(layers: int = 6):
 
 But in smaller projects it might be very convinient to put configurations alongside the methods they manage.
 
-### 3. Use `override` to create as many custom configurations as you need
+### 4. Use `override` to create as many custom configurations as you need
 When working with text configuration files, it's natural to create separate files for different environments or use cases. In `configuronic`, just create new configuration variables that override the base config.
 
 ```python

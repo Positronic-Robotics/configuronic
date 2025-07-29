@@ -3,6 +3,7 @@ from enum import Enum
 import pytest
 
 import configuronic as cfn
+import tests.support_package.cfg2
 
 
 class ResolutionEnum(Enum):
@@ -97,7 +98,7 @@ def test_instantiate_class_required_args_provided_with_kwargs_override_created()
 def test_instantiate_class_required_args_provided_with_path_to_class_created():
     incomplete_env_cfg = cfn.Config(Env)
 
-    env_obj = incomplete_env_cfg.override(camera="@configuronic.tests.test_config.static_object").instantiate()
+    env_obj = incomplete_env_cfg.override(camera="@tests.test_config.static_object").instantiate()
 
     assert isinstance(env_obj, Env)
     assert isinstance(env_obj.camera, Camera)
@@ -454,8 +455,8 @@ def test_override_with_single_dot_enum_relative_path():
 
 
 def test_override_with_multiple_dots_relative_path():
-    from configuronic.tests.support_package.b import B
-    from configuronic.tests.support_package.subpkg.a import A
+    from tests.support_package.b import B
+    from tests.support_package.subpkg.a import A
 
     env_cfg = cfn.Config(Env, camera=A)
 
@@ -465,7 +466,7 @@ def test_override_with_multiple_dots_relative_path():
 
 
 def test_override_with_dot_from_cfg_module_applies_replative_to_cfg_module():
-    from configuronic.tests.support_package.cfg import a_cfg_value1
+    from tests.support_package.cfg import a_cfg_value1
 
     env_cfg = cfn.Config(Env, camera=a_cfg_value1)
 
@@ -475,7 +476,7 @@ def test_override_with_dot_from_cfg_module_applies_replative_to_cfg_module():
 
 
 def test_override_with_dot_from_copied_config_applies_replative_to_cfg_module():
-    from configuronic.tests.support_package.cfg2 import a_cfg_value1_copy
+    from tests.support_package.cfg2 import a_cfg_value1_copy
 
     env_cfg = cfn.Config(Env, camera=a_cfg_value1_copy)
 
@@ -485,7 +486,7 @@ def test_override_with_dot_from_copied_config_applies_replative_to_cfg_module():
 
 
 def test_config_callable_with_dot_from_copied_config_applies_replative_to_cfg_module():
-    from configuronic.tests.support_package.cfg2 import a_cfg_value1_copy
+    from tests.support_package.cfg2 import a_cfg_value1_copy
 
     env_cfg = cfn.Config(Env, camera=a_cfg_value1_copy)
 
@@ -495,7 +496,7 @@ def test_config_callable_with_dot_from_copied_config_applies_replative_to_cfg_mo
 
 
 def test_override_nesetd_value_with_dot_from_copied_config_applies_replative_to_cfg_module():
-    from configuronic.tests.support_package.cfg2 import a_nested_b_value1
+    from tests.support_package.cfg2 import a_nested_b_value1
 
     env_cfg = cfn.Config(Env, camera=a_nested_b_value1)
 
@@ -505,7 +506,7 @@ def test_override_nesetd_value_with_dot_from_copied_config_applies_replative_to_
 
 
 def test_override_with_dot_from_overriden_config_applies_replative_to_cfg_module():
-    from configuronic.tests.support_package.cfg2 import a_cfg_value1_override_value3
+    from tests.support_package.cfg2 import a_cfg_value1_override_value3
 
     env_cfg = cfn.Config(Env, camera=a_cfg_value1_override_value3)
 
@@ -515,7 +516,7 @@ def test_override_with_dot_from_overriden_config_applies_replative_to_cfg_module
 
 
 def test_override_with_dot_and_string_default():
-    env_cfg = cfn.Config(Env).override(camera="@configuronic.tests.test_config.Camera")
+    env_cfg = cfn.Config(Env).override(camera="@tests.test_config.Camera")
     env_obj = env_cfg.override(camera=".static_object").instantiate()
 
     assert env_obj.camera is static_object
@@ -575,14 +576,14 @@ def test_override_with_dot_resolves_against_nested_config_module():
     with a relative import ('.return2') must still resolve inside the
     *cfg2* module, not configuronic.config.
     """
-    top_cfg = cfn.Config(identity, x=cfn.tests.support_package.cfg2.a_cfg_value1_copy)
+    top_cfg = cfn.Config(identity, x=tests.support_package.cfg2.a_cfg_value1_copy)
 
     result = top_cfg.override(x=".return2").instantiate()
     assert result == 2
 
 
 def test_config_callable_with_dot_resolves_against_nested_config_module():
-    top_cfg = cfn.Config(identity, x=cfn.tests.support_package.cfg2.a_cfg_value1_copy)
+    top_cfg = cfn.Config(identity, x=tests.support_package.cfg2.a_cfg_value1_copy)
     result = top_cfg(x=".return2")
     assert result == 2
 

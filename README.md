@@ -225,6 +225,24 @@ python train.py --message="@@starts_with_at"          # Literal string "@starts_
 python train.py --text="foo@bar"                      # No escaping needed in the middle
 ```
 
+Absolute imports could also be used in both Python decorators and classes. However, we don't suggest using them:
+
+```python
+@cfn.config(model="@torchvision.models.resnet34")
+def get_model_parameters(model: torch.nn.Module):
+    return list(model.named_parameters())
+```
+
+```python
+def get_model_parameters(model: torch.nn.Module):
+    return list(model.named_parameters())
+
+resnet_model_parameters = cfn.Config(
+    get_model_parameters,
+    model="@torchvision.models.resnet34"
+)
+```
+
 #### Relative Imports (`.`)
 Navigate relative to the current module, similar to Python's relative import syntax:
 

@@ -198,6 +198,11 @@ class Config:
         Stores the callable target and its arguments and keyword arguments, which
         can be overridden/instantiated later.
 
+        The args and kwargs could be strings with special syntax, which will be resolved to actual Python objects.
+        "@path.to.object" will be resolved to the object similar to "from path.to import object".
+
+        Relative imports (".path.to.object") has no meaning in the __init__ method, and will cause an error.
+
         Args:
             target: The target object to be configured.
             *args: Positional arguments to be passed to the target object.
@@ -217,6 +222,11 @@ class Config:
             >>>     return a + b
             >>> res = cfn.Config(sum, a=1, b=2).instantiate()
             >>> assert res == 3
+
+            >>> @cfn.config(status="@http.HTTPStatus.OK")
+            >>> def return_status(status):
+            >>>     return status
+            >>> assert return_status() == http.HTTPStatus.OK
         """
         assert callable(target), f'Target must be callable, got object of type {type(target)}.'
         self.target = target

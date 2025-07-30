@@ -220,7 +220,7 @@ class Config:
         """
         assert callable(target), f'Target must be callable, got object of type {type(target)}.'
         self.target = target
-        self.args = list(args)  # TODO: cover argument override with tests
+        self.args = [_resolve_value(arg) for arg in args]  # TODO: cover argument override with tests
         self.kwargs = {}
         self._override_inplace(**kwargs)
 

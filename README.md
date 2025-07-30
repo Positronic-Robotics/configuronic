@@ -43,14 +43,14 @@ python train.py --help
 
 ## 📖 Table of Contents
 
-- [Installation](#installation)
-- [Core Concepts](#core-concepts)
-- [Real-World Examples](#real-world-examples)
-- [Advanced Features](#advanced-features)
-- [CLI Usage](#cli-usage)
-- [API Reference](#api-reference)
-- [Best Practices](#best-practices)
-- [Contributing](#contributing)
+- [Installation](#-installation)
+- [Core Concepts](#-core-concepts)
+- [Real-World Examples](#-real-world-examples)
+- [Advanced Features](#-advanced-features)
+- [CLI Usage](#-cli-usage)
+- [API Reference](#-api-reference)
+- [Best Practices](#-best-practices)
+- [Contributing](#-contributing)
 
 ## 📦 Installation
 
@@ -61,7 +61,7 @@ pip install configuronic
 
 ### Development Installation
 ```bash
-git clone https://github.com/positronic/configuronic.git
+git clone https://github.com/Positronic-Robotics/configuronic.git
 cd configuronic
 uv venv -p 3.10
 source .venv/bin/activate
@@ -139,7 +139,7 @@ fast_training = training_cfg.override(**{
 ```python
 import configuronic as cfn
 
-@cfn.config(ip="172.168.0.2", port="/dev/ttyUSB0")
+@cfn.config(ip="172.168.0.2")
 def robot_arm(ip: str, relative_dynamics_factor: float = 0.2):
     from my_robots import FrankaArm
     return FrankaArm(ip=ip, dynamics_factor=relative_dynamics_factor)
@@ -535,9 +535,9 @@ We welcome contributions! Here's how to get started:
 
 ### Development Setup
 ```bash
-git clone https://github.com/your-org/configuronic.git
+git clone https://github.com/Positronic-Robotics/configuronic.git
 cd configuronic
-uv pip install -e ".[dev]"  # FIXME: add pytest and pytest-cov there
+uv pip install -e ".[dev]"
 ```
 
 ### Running Tests
@@ -557,8 +557,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) f
 
 ## 📞 Support
 
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/your-org/configuronic/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/your-org/configuronic/discussions) **FIXME: Create Discord**
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/Positronic-Robotics/configuronic/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/Positronic-Robotics/configuronic/discussions) **FIXME: Create Discord**
 - 📧 **Email**: hi@positronic.ro
 
 ---

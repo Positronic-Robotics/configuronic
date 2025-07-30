@@ -221,7 +221,8 @@ class Config:
         assert callable(target), f'Target must be callable, got object of type {type(target)}.'
         self.target = target
         self.args = list(args)  # TODO: cover argument override with tests
-        self.kwargs = kwargs
+        self.kwargs = {}
+        self._override_inplace(**kwargs)
 
         self._creator_module = _get_creator_module()
 
@@ -249,11 +250,15 @@ class Config:
         overriden_cfg = self.copy()
         # we want to keep creator module (module override was called from) for the overriden config
         overriden_cfg._creator_module = _get_creator_module()
+        overriden_cfg._override_inplace(**overrides)
 
+        return overriden_cfg
+
+    def _override_inplace(self, **overrides):
         for key, value in overrides.items():
             key_list = key.split('.')
 
-            current_obj = overriden_cfg
+            current_obj = self
 
             for i, key in enumerate(key_list[:-1]):
                 current_obj = _get_value(current_obj, key)
@@ -262,8 +267,6 @@ class Config:
                     raise ConfigError(f"Argument '{path_to_not_found_arg}' not found in config")
 
             _set_value(current_obj, key_list[-1], value)
-
-        return overriden_cfg
 
     def _set_value(self, key, value):
         default = self._get_value(key) if self._has_value(key) else None
@@ -368,7 +371,9 @@ class Config:
 
         new_kwargs = {key: value._copy() if isinstance(value, Config) else value for key, value in self.kwargs.items()}
 
-        cfg = Config(self.target, *new_args, **new_kwargs)
+        cfg = Config(self.target)
+        cfg.args = new_args
+        cfg.kwargs = new_kwargs
         cfg._creator_module = self._creator_module
         return cfg
 

@@ -843,5 +843,40 @@ def test_config_args_kwargs_overlap_produces_error():
         func()
 
 
-if __name__ == "__main__":
+def test_config_instantiation_string_in_decorator_resolves_properly():
+    @cfn.config(a='@tests.support_package.cfg2.return1')
+    def func(a):
+        return a
+
+    assert func.instantiate() == 1
+
+
+def test_config_instantiation_string_in_class_resolves_properly():
+    def func(a):
+        return a
+
+    func_cfg = cfn.Config(func, a='@tests.support_package.cfg2.return1')
+
+    assert func_cfg.instantiate() == 1
+
+
+def test_config_copy_with_double_at_sign_in_decorator_produces_same_config():
+    @cfn.config(a='@@some_string')
+    def func(a):
+        return a
+
+    func_copy = func.copy()
+
+    assert func_copy() == func() == '@some_string'
+
+
+def test_config_dot_string_in_decorator_produces_value_error():
+    with pytest.raises(ValueError, match='Relative import used with no default value'):
+
+        @cfn.config(a='.return1')
+        def func(a):
+            return a
+
+
+if __name__ == '__main__':
     pytest.main()

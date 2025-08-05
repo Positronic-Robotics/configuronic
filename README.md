@@ -78,13 +78,13 @@ In configuronic, configurations are **closures** - callables that store both the
 import configuronic as cfn
 
 # Create a configuration
-@cfn.config(batch_size=32, lr=0.001)
-def create_optimizer(batch_size: int, lr: float):
-    return torch.optim.Adam(lr=lr)
+@cfn.config(lr=1e-3, weight_decay=0)
+def create_optimizer(lr: float, weight_decay: float):
+    return torch.optim.Adam(lr=lr, weight_decay=weight_decay)
 
 # Override and create variants
-fast_optimizer = create_optimizer.override(lr=0.01)
-large_batch_optimizer = create_optimizer.override(batch_size=128)
+fast_optimizer = create_optimizer.override(lr=1e-2)
+regularaized_optimizer = create_optimizer.override(weight_decay=1e-3)
 
 # Instantiate when needed
 optimizer = fast_optimizer.instantiate()

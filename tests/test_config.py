@@ -913,5 +913,67 @@ def test_config_dot_string_positional_arg_in_class_produces_value_error():
         cfn.Config(func, '.return1')
 
 
+def test_config_config_default_values_are_resolved_properly():
+
+    @cfn.config()
+    def return1():
+        return 1
+
+    @cfn.config()
+    def add1(a=return1):
+        return a + 1
+
+    assert add1.instantiate() == 2
+
+
+def test_config_config_multiple_default_values_are_resolved_properly():
+
+    @cfn.config()
+    def returnx(x=1):
+        return x
+
+    return1 = returnx.override(x=1)
+    return2 = returnx.override(x=2)
+
+    @cfn.config()
+    def add1(a, b=return1, c=return2):
+        return f"{a} + {b} + {c}"
+
+    assert add1(a=0) == "0 + 1 + 2"
+
+
+def test_config_default_function_kwargs_are_overriden_by_config_kwargs():
+    @cfn.config()
+    def return1():
+        return 1
+
+    @cfn.config()
+    def return2():
+        return 2
+
+    @cfn.config(a=return1)
+    def add1(a=return2):
+        return a + 1
+
+    assert add1.instantiate() == 2
+
+
+def test_config_args_and_kwargs_kwargs_are_overriden_by_config_kwargs():
+    @cfn.config()
+    def return1():
+        return 1
+
+    @cfn.config()
+    def return2():
+        return 2
+
+    def func(*args, b=return2):
+        return f"{args} + {b}"
+
+    func = cfn.Config(func, 1, 2, b=return1)
+
+    assert func.instantiate() == "(1, 2) + 1"
+
+
 if __name__ == '__main__':
     pytest.main()

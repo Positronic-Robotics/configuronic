@@ -37,3 +37,15 @@ def test_cli_help_prints_docstring(capfd):
         cfn.cli(identity)
         out, err = capfd.readouterr()
         assert "This is a test function." in out
+
+
+def test_cli_help_contains_function_default_values(capfd):
+    @cfn.config()
+    def identity(a=1, b=2):
+        print(a, b)
+
+    with patch('sys.argv', ['script.py', '--help']):
+        cfn.cli(identity)
+        out, err = capfd.readouterr()
+        assert "a: 1" in out
+        assert "b: 2" in out

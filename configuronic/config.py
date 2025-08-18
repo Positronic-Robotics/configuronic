@@ -193,6 +193,11 @@ def _get_creator_module() -> ModuleType | None:
     return module
 
 
+def _get_default_argument_values(target: Callable) -> dict[str, Any]:
+    sig = inspect.signature(target)
+    return {name: param.default for name, param in sig.parameters.items() if param.default != inspect.Parameter.empty}
+
+
 class Config:
     def __init__(self, target, *args, **kwargs):
         """
@@ -234,7 +239,7 @@ class Config:
         assert callable(target), f'Target must be callable, got object of type {type(target)}.'
         self.target = target
         self.args = [_resolve_value(arg) for arg in args]  # TODO: cover argument override with tests
-        self.kwargs = {}
+        self.kwargs = _get_default_argument_values(target)
         self._override_inplace(**kwargs)
 
         self._creator_module = _get_creator_module()

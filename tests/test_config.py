@@ -643,6 +643,30 @@ def test_config_with_list_arg_with_nested_config_could_be_overridden():
     assert return_list.override(**{'arg.0.value': 100}).instantiate() == [100, 2]
 
 
+def test_override_list_entry_resolves_relative_dot():
+    import tests.support_package.cfg2 as cfg2
+
+    @cfn.config(arg=[cfg2.a_cfg_value1_copy])
+    def return_first(arg):
+        return arg[0]
+
+    # Override nested list index with a relative path; should resolve to cfg2.return2
+    assert return_first.override(**{'arg.0': '.return2'}).instantiate() == 2
+
+
+def test_override_list_entry_resolves_absolute_at():
+    import tests.support_package.cfg2 as cfg2
+
+    @cfn.config(arg=[cfg2.a_cfg_value1_copy])
+    def return_first(arg):
+        return arg[0]
+
+    # Override nested list index with absolute import path
+    assert (
+        return_first.override(**{'arg.0': '@tests.support_package.cfg2.return2'}).instantiate() == 2
+    )
+
+
 def test_config_with_tuple_arg_with_nested_config_could_be_overridden():
     @cfn.config(value=1)
     def obj1(value):
@@ -681,6 +705,30 @@ def test_config_with_dict_arg_with_nested_config_could_be_overridden():
         return arg
 
     assert return_dict.override(**{'arg.a.value': 100}).instantiate() == {'a': 100, 'b': 2}
+
+
+def test_override_dict_entry_resolves_relative_dot():
+    import tests.support_package.cfg2 as cfg2
+
+    @cfn.config(arg={'x': cfg2.a_cfg_value1_copy})
+    def return_x(arg):
+        return arg['x']
+
+    # Override nested dict key with a relative path; should resolve to cfg2.return2
+    assert return_x.override(**{'arg.x': '.return2'}).instantiate() == 2
+
+
+def test_override_dict_entry_resolves_absolute_at():
+    import tests.support_package.cfg2 as cfg2
+
+    @cfn.config(arg={'x': cfg2.a_cfg_value1_copy})
+    def return_x(arg):
+        return arg['x']
+
+    # Override nested dict key with absolute import path
+    assert (
+        return_x.override(**{'arg.x': '@tests.support_package.cfg2.return2'}).instantiate() == 2
+    )
 
 
 def test_required_args_with_no_default_values_returns_all_args():

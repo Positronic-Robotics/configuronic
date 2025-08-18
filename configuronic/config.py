@@ -165,11 +165,14 @@ def _set_value(obj, key, value):
     if isinstance(obj, Config):
         obj._set_value(key, value)
     elif isinstance(obj, list):
-        obj[int(key)] = value
+        index = int(key)
+        default = obj[index] if 0 <= index < len(obj) else None
+        obj[index] = _resolve_value(value, default)
     elif isinstance(obj, tuple):
         raise NotImplementedError('Overriding tuple values is not implemented')
     elif isinstance(obj, dict):
-        obj[key] = value
+        default = obj.get(key) if isinstance(obj, dict) else None
+        obj[key] = _resolve_value(value, default)
     else:
         raise ConfigError(f'Cannot set value of {obj} with key {key}')
 

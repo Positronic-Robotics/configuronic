@@ -797,6 +797,50 @@ def test_required_args_with_kwargs_not_required():
     assert cfn.get_required_args(func) == []
 
 
+def test_required_args_with_nested_config():
+    @cfn.config()
+    def nested_func(req_arg):
+        pass
+
+    @cfn.config(a=nested_func)
+    def func(a):
+        pass
+
+    assert cfn.get_required_args(func) == ['a.req_arg']
+
+
+def test_required_args_with_nested_config_in_list():
+    @cfn.config()
+    def nested_func(req_arg):
+        pass
+
+    @cfn.config(a=1)
+    def complete_config(a):
+        pass
+
+    @cfn.config(a=[complete_config, nested_func])
+    def func(a):
+        pass
+
+    assert cfn.get_required_args(func) == ['a.1.req_arg']
+
+
+def test_required_args_with_nested_config_in_dict():
+    @cfn.config()
+    def nested_func(req_arg):
+        pass
+
+    @cfn.config(a=1)
+    def complete_config(a):
+        pass
+
+    @cfn.config(arg={'a': complete_config, 'b': nested_func})
+    def func(arg):
+        pass
+
+    assert cfn.get_required_args(func) == ['arg.b.req_arg']
+
+
 def test_override_existing_list_arg_raises_index_error():
     @cfn.config(a=[1, 2, 3])
     def func(a):

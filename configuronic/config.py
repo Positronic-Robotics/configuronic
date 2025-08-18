@@ -416,13 +416,7 @@ class Config:
         return self.override(**kwargs).instantiate()
 
 
-def get_required_args(config: Config) -> list[str]:
-    """
-    Get the list of required arguments to instantiate the target callable.
-
-    Returns:
-        List of required argument names (excluding those with default values and those that are already set).
-    """
+def _get_required_args_recursive(config: Config, prefix: str = '') -> list[str]:
     sig = inspect.signature(config.target)
     required_args = []
 
@@ -430,6 +424,16 @@ def get_required_args(config: Config) -> list[str]:
         if param.default != inspect.Parameter.empty:
             continue
         if param.name in config.kwargs:
+            if isinstance(config.kwargs[param.name], Config):
+                required_args.extend(_get_required_args_recursive(config.kwargs[param.name], f'{prefix}{name}.'))
+            if isinstance(config.kwargs[param.name], list | tuple):
+                for i, item in enumerate(config.kwargs[param.name]):
+                    if isinstance(item, Config):
+                        required_args.extend(_get_required_args_recursive(item, f'{prefix}{name}.{i}.'))
+            if isinstance(config.kwargs[param.name], dict):
+                for k, v in config.kwargs[param.name].items():
+                    if isinstance(v, Config):
+                        required_args.extend(_get_required_args_recursive(v, f'{prefix}{name}.{k}.'))
             continue
         if i < len(config.args):
             continue
@@ -440,8 +444,18 @@ def get_required_args(config: Config) -> list[str]:
             # var keyword args are not required
             continue
 
-        required_args.append(name)
+        required_args.append(f'{prefix}{name}')
     return required_args
+
+
+def get_required_args(config: Config) -> list[str]:
+    """
+    Get the list of required arguments to instantiate the target callable.
+
+    Returns:
+        List of required argument names (excluding those with default values and those that are already set).
+    """
+    return _get_required_args_recursive(config, '')
 
 
 def config(**kwargs) -> Callable[[Callable], Config]:

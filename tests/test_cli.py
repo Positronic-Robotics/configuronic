@@ -37,3 +37,18 @@ def test_cli_help_prints_docstring(capfd):
         cfn.cli(identity)
         out, err = capfd.readouterr()
         assert "This is a test function." in out
+
+
+def test_cli_help_prints_nested_required_args(capfd):
+    @cfn.config()
+    def nested_func(req_arg):
+        pass
+
+    @cfn.config(a=nested_func)
+    def func(a):
+        pass
+
+    with patch('sys.argv', ['script.py', '--help']):
+        cfn.cli(func)
+        out, err = capfd.readouterr()
+        assert "a.req_arg: <REQUIRED>" in out

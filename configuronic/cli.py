@@ -91,19 +91,18 @@ def _cli_multiple_commands(commands_config: dict[str, Config]):
         elif args[0] in commands_config:
             return _cli_single_command(commands_config[args[0]], is_command_first=True)(_command, help, **kwargs)
         else:
-            assert args[0] in commands_config, \
-                f"Command '{args[0]}' not found. Available commands: {list(commands_config.keys())}"
+            raise ValueError(f"Command '{args[0]}' not found. Available commands: {list(commands_config.keys())}")
 
     fire.Fire(_run_and_help)
 
 
-def cli(config: Config | None = None, **commands_config: Config):
+def cli(config: Config | dict[str, Config]):
     """
     Run a config object(s) as a CLI.
 
     Args:
-        config: The config object to run.
-        **commands_config: Config objects to run as commands.
+        config: The config or dict of configs to run. If dict is provided, each key is a command name
+         and each value is a config object.
 
     Example:
         >>> @cfn.config()
@@ -119,14 +118,14 @@ def cli(config: Config | None = None, **commands_config: Config):
         >>> @cfn.config()
         >>> def product(a, b):
         >>>     return a * b
-        >>> cfn.cli(sum=sum, product=product)
+        >>> cfn.cli({'sum': sum, 'product': product})
         >>> # Shell call: python script.py sum --a 1 --b 2
         >>> # Shell call: python script.py product --a 1 --b 2
         >>> # Shell call: python script.py --help
         >>> # Shell call: python script.py sum --help
     """
 
-    if config is None:
-        return _cli_multiple_commands(commands_config)
+    if isinstance(config, dict):
+        return _cli_multiple_commands(config)
     else:
         fire.Fire(_cli_single_command(config))

@@ -66,7 +66,7 @@ def test_cli_multiple_commands_call_overrides_arg(capfd):
         print(f"b: {b}")
 
     with patch('sys.argv', ['script.py', 'func1', '--a=1']):
-        cfn.cli(func1=func1, func2=func2)
+        cfn.cli({'func1': func1, 'func2': func2})
         out, err = capfd.readouterr()
         assert out == 'a: 1\n'
 
@@ -82,7 +82,7 @@ def test_cli_multiple_commands_help_prints_commands_list(capfd):
         print(f"b: {b}")
 
     with patch('sys.argv', ['script.py', '--help']):
-        cfn.cli(func1=func1, func2=func2)
+        cfn.cli({'func1': func1, 'func2': func2})
         out, err = capfd.readouterr()
         assert "python script.py func1 --a=<REQUIRED> # Docstring for func1" in out
         assert "python script.py func2 --b=<REQUIRED> # Docstring for func2" in out
@@ -98,7 +98,7 @@ def test_cli_multiple_commands_help_prints_command_help(capfd):
         print(f"b: {b}")
 
     with patch('sys.argv', ['script.py', 'func1', '--help']):
-        cfn.cli(func1=func1, func2=func2)
+        cfn.cli({'func1': func1, 'func2': func2})
         out, err = capfd.readouterr()
         assert "a: <REQUIRED>" in out
 
@@ -113,8 +113,8 @@ def test_cli_multiple_commands_unknown_command_raises_error(capfd):
         print(f"b: {b}")
 
     with patch('sys.argv', ['script.py', 'func3']):
-        with pytest.raises(AssertionError) as e:
-            cfn.cli(func1=func1, func2=func2)
+        with pytest.raises(ValueError) as e:
+            cfn.cli({'func1': func1, 'func2': func2})
         assert "Command 'func3' not found. Available commands: ['func1', 'func2']" in str(e.value)
 
 
@@ -128,6 +128,6 @@ def test_cli_multiple_commands_unknown_command_with_help_raises_error(capfd):
         print(f"b: {b}")
 
     with patch('sys.argv', ['script.py', 'func3', '--help']):
-        with pytest.raises(AssertionError) as e:
-            cfn.cli(func1=func1, func2=func2)
+        with pytest.raises(ValueError) as e:
+            cfn.cli({'func1': func1, 'func2': func2})
         assert "Command 'func3' not found. Available commands: ['func1', 'func2']" in str(e.value)

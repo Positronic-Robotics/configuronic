@@ -362,6 +362,45 @@ python script.py --tokenizer=".CustomTokenizer"
 python script.py --cameras.left.fps=60 --cameras.right.device="/dev/video2"
 ```
 
+
+### Multi-Command CLI
+You can also provide multiple commands in a single script by passing a dictionary of configurations:
+
+```python
+@cfn.config()
+def sum_numbers(x: float, y: float) -> float:
+    """Sum of two numbers"""
+    return x + y
+
+@cfn.config()
+def multiply_numbers(x: float, y: float) -> float:
+    """Product of two numbers"""
+    return x * y
+
+if __name__ == "__main__":
+    cfn.cli({'sum': sum_numbers, 'multiply': multiply_numbers})
+```
+
+This enables running different commands from the same script:
+
+```bash
+# Run sum command
+python script.py sum --x=5 --y=10
+# Output: 15.0
+
+# Run multiply command
+python script.py multiply --x=5 --y=10
+# Output: 50.0
+
+# Get help for all commands
+python script.py --help
+# Shows available commands with their descriptions
+
+# Get help for specific command
+python script.py sum --help
+# Shows detailed help for the sum command
+```
+
 ### Parameter Override Order ⚠️
 
 **Important:** Parameter overrides are executed in order of declaration. When overriding nested configurations, set the parent object first, then its properties:
@@ -402,8 +441,20 @@ def my_function(...):
 
 ### Utility Functions
 
-#### `cli(config: Config)`
-Generate automatic command-line interface for any configuration.
+#### `cli(config: Config | dict[str, Config])`
+Generate automatic command-line interface for any configuration or multiple configurations.
+
+**Parameters:**
+- `config`: Either a single `Config` object or a dictionary mapping command names to `Config` objects
+
+**Examples:**
+```python
+# Single command
+cfn.cli(my_config)
+
+# Multiple commands
+cfn.cli({'train': train_config, 'eval': eval_config, 'test': test_config})
+```
 
 #### `get_required_args(config: Config) -> List[str]`
 Get list of required arguments for a configuration.

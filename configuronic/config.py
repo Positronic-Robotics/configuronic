@@ -1,4 +1,4 @@
-import importlib.util
+import importlib
 import inspect
 import posixpath
 from collections import deque
@@ -415,49 +415,6 @@ class Config:
         """
         return self.override(**kwargs).instantiate()
 
-
-def _get_required_args_recursive(config: Config, prefix: str = '') -> list[str]:
-    sig = inspect.signature(config.target)
-    required_args = []
-
-    for i, (name, param) in enumerate(sig.parameters.items()):
-        if param.default != inspect.Parameter.empty:
-            continue
-        if param.name in config.kwargs:
-            if isinstance(config.kwargs[param.name], Config):
-                required_args.extend(_get_required_args_recursive(config.kwargs[param.name], f'{prefix}{name}.'))
-            if isinstance(config.kwargs[param.name], list | tuple):
-                for i, item in enumerate(config.kwargs[param.name]):
-                    if isinstance(item, Config):
-                        required_args.extend(_get_required_args_recursive(item, f'{prefix}{name}.{i}.'))
-            if isinstance(config.kwargs[param.name], dict):
-                for k, v in config.kwargs[param.name].items():
-                    if isinstance(v, Config):
-                        required_args.extend(_get_required_args_recursive(v, f'{prefix}{name}.{k}.'))
-            continue
-        if i < len(config.args):
-            continue
-        if param.kind == inspect.Parameter.VAR_POSITIONAL:
-            # var positional args are not required
-            continue
-        if param.kind == inspect.Parameter.VAR_KEYWORD:
-            # var keyword args are not required
-            continue
-
-        required_args.append(f'{prefix}{name}')
-    return required_args
-
-
-def get_required_args(config: Config) -> list[str]:
-    """
-    Get the list of required arguments to instantiate the target callable.
-
-    Returns:
-        List of required argument names (excluding those with default values and those that are already set).
-    """
-    return _get_required_args_recursive(config, '')
-
-
 def config(**kwargs) -> Callable[[Callable], Config]:
     """
     Decorator to create a Config object.
@@ -487,40 +444,3 @@ def config(**kwargs) -> Callable[[Callable], Config]:
         config._creator_module = _get_creator_module()
         return config
     return _config_decorator
-
-
-def cli(config: Config):
-    """
-    Run a config object as a CLI.
-
-    Args:
-        config: The config object to run.
-
-    Example:
-        >>> @cfn.config()
-        >>> def sum(a, b):
-        >>>     return a + b
-        >>> cfn.cli(sum)
-        >>> # Shell call: python script.py --a 1 --b 2
-        >>> # Shell call: python script.py --help
-    """
-    import fire
-
-    assert 'help' not in config.kwargs, "Config contains 'help' argument. This is reserved for the help flag."
-
-    def _run_and_help(help: bool = False, **kwargs):
-        overriden_config = config.override(**kwargs)
-        if help:
-            if hasattr(overriden_config.target, '__doc__') and overriden_config.target.__doc__:
-                print(overriden_config.target.__doc__)
-                print('=' * 140)
-
-            print('Config:')
-            for arg in get_required_args(overriden_config):
-                print(f'{arg}: <REQUIRED>')
-            print()
-            print(str(overriden_config))
-        else:
-            return overriden_config.instantiate()
-
-    fire.Fire(_run_and_help)

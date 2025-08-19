@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0] - 2025-08-19
+
+### Added
+- Add ability to specify multiple command in `cfn.cli`. Example:
+```python
+@cfn.config()
+def sum(a, b):
+    return a + b
+
+@cfn.config()
+def prod(a, b):
+    return a * b
+
+cfn.cli({'sum': sum, 'prod': prod})
+```
+
+
 ## [0.1.1] - 2025-08-18
 
 ### Fixed

@@ -83,10 +83,15 @@ def _cli_multiple_commands(commands_config: dict[str, Config]):
         if args[0] == '--help':
             print('Commands:')
             for command in commands_config:
-                first_line_of_doc = commands_config[command].target.__doc__.split('\n')[0]
+                target_command_doc = commands_config[command].target.__doc__
+                if target_command_doc:
+                    first_line_of_doc = target_command_doc.split('\n')[0]
+                    command_description = f' # {first_line_of_doc}'
+                else:
+                    command_description = ''
                 required_args = get_required_args(commands_config[command])
                 required_args_str = ' '.join([f'--{arg}=<REQUIRED>' for arg in required_args])
-                print(f'python {sys.argv[0]} {command} {required_args_str} # {first_line_of_doc}')
+                print(f'python {sys.argv[0]} {command} {required_args_str}{command_description}')
             print()
         elif args[0] in commands_config:
             return _cli_single_command(commands_config[args[0]], is_command_first=True)(_command, help, **kwargs)

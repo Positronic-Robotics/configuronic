@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1] - 2025-08-22
+
+### Fixed
+- Fix --help failed for cfn.cli with multiple commands with no docstring (#17)
+
+
 ## [0.2.0] - 2025-08-19
 
 ### Added
@@ -26,4 +32,3 @@ cfn.cli({'sum': sum, 'prod': prod})
 
 ### Added
 - Initial release of Configuronic: configuration as code, CLI integration, nested overrides, absolute/relative import resolution, and serialization.
-

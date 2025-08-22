@@ -88,6 +88,17 @@ def test_cli_multiple_commands_help_prints_commands_list(capfd):
         assert "python script.py func2 --b=<REQUIRED> # Docstring for func2" in out
 
 
+def test_cli_multiple_commands_no_docstring_help_prints_commands_list(capfd):
+    @cfn.config()
+    def func_no_docstring(a):
+        print(f"a: {a}")
+
+    with patch('sys.argv', ['script.py', '--help']):
+        cfn.cli({'func_no_docstring': func_no_docstring})
+        out, err = capfd.readouterr()
+        assert "python script.py func_no_docstring --a=<REQUIRED>" in out
+
+
 def test_cli_multiple_commands_help_prints_command_help(capfd):
     @cfn.config()
     def func1(a):

@@ -80,7 +80,7 @@ def _cli_multiple_commands(commands_config: dict[str, Config]):
     def _run_and_help(_command: str = None, help: bool = False, **kwargs):
         args = sys.argv[1:]
         # Handle help flag manually to choose a proper function for fire.Fire
-        if args[0] == '--help':
+        if len(args) == 0 or args[0] == '--help':
             print('Commands:')
             for command in commands_config:
                 target_command_doc = commands_config[command].target.__doc__

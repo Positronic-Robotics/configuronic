@@ -142,3 +142,14 @@ def test_cli_multiple_commands_unknown_command_with_help_raises_error(capfd):
         with pytest.raises(ValueError) as e:
             cfn.cli({'func1': func1, 'func2': func2})
         assert "Command 'func3' not found. Available commands: ['func1', 'func2']" in str(e.value)
+
+
+def test_cli_multiple_commands_print_help_if_no_args_provided(capfd):
+    @cfn.config()
+    def func1(a):
+        print(f"a: {a}")
+
+    with patch('sys.argv', ['script.py']):
+        cfn.cli({'func1': func1})
+        out, err = capfd.readouterr()
+        assert "python script.py func1 --a=<REQUIRED>" in out

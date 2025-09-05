@@ -513,11 +513,13 @@ def test_override_with_dot_and_string_default():
     assert env_obj.camera is static_object
 
 
-def test_override_with_dot_without_default_raises():
+def test_override_with_dot_without_default_treated_as_literal():
     env_cfg = cfn.Config(Env, camera=None)
 
-    with pytest.raises(ValueError):
-        env_cfg.override(camera='.static_object')
+    # Leading-dot strings are treated as literals when default is not a Config
+    cfg2 = env_cfg.override(camera='.static_object')
+    obj = cfg2.instantiate()
+    assert obj.camera == '.static_object'
 
 
 def test_relative_import_with_enum_default():
@@ -981,28 +983,26 @@ def test_config_copy_with_double_at_sign_in_class_positional_arg_produces_same_c
 
     assert func_copy() == func_cfg() == '@some_string'
 
-def test_config_dot_string_in_decorator_produces_value_error():
-    with pytest.raises(ValueError, match='Relative import used with no default value'):
+def test_config_dot_string_in_decorator_is_literal():
+    @cfn.config(a='.return1')
+    def func(a):
+        return a
 
-        @cfn.config(a='.return1')
-        def func(a):
-            return a
-
-
-def test_config_dot_string_in_class_produces_value_error():
-    with pytest.raises(ValueError, match='Relative import used with no default value'):
-
-        def func(x):
-            return x
-        cfn.Config(func, a='.return1')
+    assert func() == '.return1'
 
 
-def test_config_dot_string_positional_arg_in_class_produces_value_error():
-    with pytest.raises(ValueError, match='Relative import used with no default value'):
+def test_config_dot_string_in_class_is_literal():
+    def func(x):
+        return x
+    cfg = cfn.Config(func, x='.return1')
+    assert cfg() == '.return1'
 
-        def func(x):
-            return x
-        cfn.Config(func, '.return1')
+
+def test_config_dot_string_positional_arg_in_class_is_literal():
+    def func(x):
+        return x
+    cfg = cfn.Config(func, '.return1')
+    assert cfg() == '.return1'
 
 
 if __name__ == '__main__':

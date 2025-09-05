@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2] - 2025-09-05
+
+### Fixed
+- Narrow relative import resolution to reduce false positives for CLI string args. Leading-dot strings are now treated as literals unless the default provides a valid base (nested `Config`, importable object, Enum value, or `'@'` string). This fixes errors like passing `--input_dir=../data` being misinterpreted as a relative import. Relative imports for enums and multi-dot module paths continue to work where appropriate.
+
+
 ## [0.2.1] - 2025-08-22
 
 ### Fixed

@@ -153,3 +153,27 @@ def test_cli_multiple_commands_print_help_if_no_args_provided(capfd):
         cfn.cli({'func1': func1})
         out, err = capfd.readouterr()
         assert "python script.py func1 --a=<REQUIRED>" in out
+
+
+def test_cli_accepts_leading_dot_strings_as_literals(capfd):
+    @cfn.config()
+    def echo(a):
+        print(a)
+
+    # '../data' should be treated as a literal string
+    with patch('sys.argv', ['script.py', '--a=../data']):
+        cfn.cli(echo)
+        out, err = capfd.readouterr()
+        assert out.strip() == '../data'
+
+    # './file' should be treated as a literal string
+    with patch('sys.argv', ['script.py', '--a=./file']):
+        cfn.cli(echo)
+        out, err = capfd.readouterr()
+        assert out.strip() == './file'
+
+    # '.env' should be treated as a literal string
+    with patch('sys.argv', ['script.py', '--a=.env']):
+        cfn.cli(echo)
+        out, err = capfd.readouterr()
+        assert out.strip() == '.env'

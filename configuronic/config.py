@@ -122,19 +122,36 @@ def _resolve_relative_import(value: str, default: Any) -> Any:
     return _import_object_from_path(f'{INSTANTIATE_PREFIX}{new_path}')
 
 
+def _can_resolve_relative(default: Any | None) -> bool:
+    """Return True if `default` provides a base for relative resolution.
+
+    We allow relative resolution when default is:
+    - a Config instance (nested config), or
+    - an importable object (has __module__ and __name__), or
+    - an Enum value (has class and name), or
+    - a string that starts with '@' (import path string)
+    """
+    if isinstance(default, Config):
+        return True
+    if isinstance(default, str):
+        return default.startswith(INSTANTIATE_PREFIX)
+    if hasattr(default, '__module__') and hasattr(default, '__name__'):
+        return True
+    if hasattr(default, '__class__') and hasattr(default, 'name'):
+        return True
+    return False
+
+
 def _resolve_value(value: Any, default: Any | None = None) -> Any:
     """Resolve special strings to actual Python objects.
 
     Supports two prefixes:
 
     - ``@`` - absolute import path of the object to instantiate
-    - ``.`` - path relative to the current default value
-
-    The ``default`` argument is used when ``value`` starts with ``.``.
-    It should either be a :class:`Config` object, a string starting with
-    ``@`` or any object that has ``__module__`` and ``__name__``
-    attributes.  ``.`` can be repeated multiple times to walk up the
-    module hierarchy of the default.
+    - ``.`` - relative path resolution when there's a suitable base: a nested
+      :class:`Config`, an importable object (class/function), an Enum value, or
+      a string starting with ``@``. Otherwise, treat leading-dot strings as
+      literals (e.g., ``../data``, ``./file``, ``.env``).
     """
     if isinstance(value, str):
         if value.startswith(INSTANTIATE_PREFIX):
@@ -142,7 +159,9 @@ def _resolve_value(value: Any, default: Any | None = None) -> Any:
                 return value[len(INSTANTIATE_PREFIX):]
             else:
                 return _import_object_from_path(value)
-        if value.startswith(RELATIVE_PATH_PREFIX) and not isinstance(default, str):
+        # Only resolve relative imports when `default` provides a valid base.
+        # Treat all other leading-dot strings as literals (e.g., '../data', '.env').
+        if value.startswith(RELATIVE_PATH_PREFIX) and _can_resolve_relative(default):
             return _resolve_relative_import(value, default)
 
     return value
@@ -204,7 +223,9 @@ class Config:
         The args and kwargs could be strings with special syntax, which will be resolved to actual Python objects.
         "@path.to.object" will be resolved to the object similar to "from path.to import object".
 
-        Relative imports (".path.to.object") has no meaning in the __init__ method, and will cause an error.
+        Relative imports (strings starting with '.') are only resolved during overrides when the
+        default value is another Config instance. In all other contexts (including __init__),
+        leading-dot strings are treated literally (e.g., '../data', './file', '.env').
 
         Args:
             target: The target object to be configured.

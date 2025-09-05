@@ -260,6 +260,8 @@ python train.py --encoder="...shared.BaseEncoder"  # -> myproject.shared.BaseEnc
 
 The path after the dots specifies the target within that module hierarchy.
 
+**Note**: Relative import resolution triggers when the default provides a valid base — specifically when it is another `Config`, an importable object (class/function), an Enum value, or a string starting with '@'. In other cases (e.g., default is `None` or a plain string), leading-dot strings are treated as literals. This allows passing common filesystem-like values such as '../data', './file', or '.env' via CLI without special handling.
+
 #### Configuration Copy Across Modules
 
 The `copy()` method updates module context so relative imports (`.`) resolve from the new module location:

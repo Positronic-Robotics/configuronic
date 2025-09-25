@@ -1,6 +1,8 @@
 import pytest
 from IPython import InteractiveShell
 
+import configuronic as cfn
+
 
 def test_config_class_could_be_created_in_ipython():
     shell = InteractiveShell.instance()
@@ -34,12 +36,15 @@ def test_config_relative_override_decorator_works_in_ipython():
         "add = cfn.Config(add, a=fn, b=2)\n"
         "add_override = add.override(a='.fn')\n"
     )
-    with pytest.raises(
-        AssertionError,
-        match="Config was created in an unknown module. Probably in IPython interactive shell. "
-        "Consider moving the config to a module.",
-    ):
+    with pytest.raises(cfn.ConfigError) as exc_info:
         result.raise_error()
+
+    assert isinstance(exc_info.value.__cause__, AssertionError)
+    assert (
+        "Config was created in an unknown module. Probably in IPython interactive shell. "
+        "Consider moving the config to a module."
+        in str(exc_info.value.__cause__)
+    )
 
 
 def test_config_relative_override_class_works_in_ipython():
@@ -52,9 +57,12 @@ def test_config_relative_override_class_works_in_ipython():
         "add = cfn.Config(add, a=fn, b=2)\n"
         "add_override = add.override(a='.fn')\n"
     )
-    with pytest.raises(
-        AssertionError,
-        match="Config was created in an unknown module. Probably in IPython interactive shell. "
-        "Consider moving the config to a module.",
-    ):
+    with pytest.raises(cfn.ConfigError) as exc_info:
         result.raise_error()
+
+    assert isinstance(exc_info.value.__cause__, AssertionError)
+    assert (
+        "Config was created in an unknown module. Probably in IPython interactive shell. "
+        "Consider moving the config to a module."
+        in str(exc_info.value.__cause__)
+    )

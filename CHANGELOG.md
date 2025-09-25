@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.3] - 2025-09-25
+
+### Fixed
+- Improved Config override error reporting by surfacing a contextual `ConfigError` that preserves the original failure details.
+
+
 ## [0.2.2] - 2025-09-05
 
 ### Fixed

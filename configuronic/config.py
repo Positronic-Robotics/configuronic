@@ -290,17 +290,22 @@ class Config:
 
     def _override_inplace(self, **overrides):
         for key, value in overrides.items():
-            key_list = key.split('.')
+            try:
+                key_list = key.split('.')
 
-            current_obj = self
+                current_obj = self
 
-            for i, key in enumerate(key_list[:-1]):
-                current_obj = _get_value(current_obj, key)
-                if current_obj is None:
-                    path_to_not_found_arg = '.'.join(key_list[: i + 1])
-                    raise ConfigError(f"Argument '{path_to_not_found_arg}' not found in config")
+                for i, key in enumerate(key_list[:-1]):
+                    current_obj = _get_value(current_obj, key)
+                    if current_obj is None:
+                        path_to_not_found_arg = '.'.join(key_list[:i + 1])
+                        raise ConfigError(
+                            f"Argument '{path_to_not_found_arg}' not found in config"
+                        )
 
-            _set_value(current_obj, key_list[-1], value)
+                _set_value(current_obj, key_list[-1], value)
+            except Exception as e:
+                raise ConfigError(f"Failed to override '{key}' with value '{value}'") from e
 
     def _set_value(self, key, value):
         default = self._get_value(key) if self._has_value(key) else None

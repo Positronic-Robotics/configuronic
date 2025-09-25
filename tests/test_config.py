@@ -522,6 +522,28 @@ def test_override_with_dot_without_default_treated_as_literal():
     assert obj.camera == '.static_object'
 
 
+def test_override_import_error_wrapped_with_context():
+    env_cfg = cfn.Config(Env, camera=cfn.Config(Camera, name='OpenCV'))
+
+    with pytest.raises(cfn.ConfigError) as exc_info:
+        env_cfg.override(camera='@not.a.real.path')
+
+    assert str(exc_info.value) == "Failed to override 'camera' with value '@not.a.real.path'"
+    assert isinstance(exc_info.value.__cause__, ImportError)
+    assert 'not.a.real.path' in str(exc_info.value.__cause__)
+
+
+def test_override_nested_error_preserves_original_cause():
+    env_cfg = cfn.Config(Env, camera=cfn.Config(Camera, name='OpenCV'))
+
+    with pytest.raises(cfn.ConfigError) as exc_info:
+        env_cfg.override(**{'camera.name.nonexistent': 'value'})
+
+    assert str(exc_info.value) == "Failed to override 'name' with value 'value'"
+    assert isinstance(exc_info.value.__cause__, cfn.ConfigError)
+    assert 'Cannot set value' in str(exc_info.value.__cause__)
+
+
 def test_relative_import_with_enum_default():
     """Test that relative imports work when the default is an Enum value."""
     import http
@@ -843,13 +865,17 @@ def test_required_args_with_nested_config_in_dict():
     assert cfn.get_required_args(func) == ['arg.b.req_arg']
 
 
-def test_override_existing_list_arg_raises_index_error():
+def test_override_existing_list_arg_reports_context_for_index_error():
     @cfn.config(a=[1, 2, 3])
     def func(a):
         return a
 
-    with pytest.raises(IndexError):
+    with pytest.raises(cfn.ConfigError) as exc_info:
         func.override(**{'a.4': 4})
+
+    assert str(exc_info.value) == "Failed to override 'a' with value '4'"
+    assert isinstance(exc_info.value.__cause__, IndexError)
+    assert 'list assignment index out of range' in str(exc_info.value.__cause__)
 
 
 def test_override_non_existing_list_arg_raises_config_error():
@@ -857,8 +883,12 @@ def test_override_non_existing_list_arg_raises_config_error():
     def func(a):
         return a
 
-    with pytest.raises(cfn.ConfigError, match="Argument 'b' not found in config"):
+    with pytest.raises(cfn.ConfigError) as exc_info:
         func.override(**{'b.0': 4})
+
+    assert str(exc_info.value) == "Failed to override 'b' with value '4'"
+    assert isinstance(exc_info.value.__cause__, cfn.ConfigError)
+    assert "Argument 'b' not found in config" in str(exc_info.value.__cause__)
 
 
 def test_override_kwargs_function_with_new_argument_returns_expected_dict():
@@ -884,8 +914,12 @@ def test_override_non_existing_nested_argument_raises_config_error():
     def composite_obj(arg):
         return arg
 
-    with pytest.raises(cfn.ConfigError, match="Argument 'arg.a' not found in config"):
+    with pytest.raises(cfn.ConfigError) as exc_info:
         composite_obj.override(**{'arg.a.b': 4}).instantiate()
+
+    assert str(exc_info.value) == "Failed to override 'a' with value '4'"
+    assert isinstance(exc_info.value.__cause__, cfn.ConfigError)
+    assert "Argument 'arg.a' not found in config" in str(exc_info.value.__cause__)
 
 
 def test_escape_at_sign_with_double_at():

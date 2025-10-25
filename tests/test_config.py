@@ -471,7 +471,7 @@ def test_override_with_dot_decorator_config_applies_relative_to_cfg_module():
 
     env_cfg = cfn.Config(Env, camera=return1)
 
-    env_obj = env_cfg.override(camera=".return2").instantiate()
+    env_obj = env_cfg.override(camera='.return2').instantiate()
 
     assert env_obj.camera == 2
 
@@ -686,9 +686,7 @@ def test_override_list_entry_resolves_absolute_at():
         return arg[0]
 
     # Override nested list index with absolute import path
-    assert (
-        return_first.override(**{'arg.0': '@tests.support_package.cfg2.return2'}).instantiate() == 2
-    )
+    assert return_first.override(**{'arg.0': '@tests.support_package.cfg2.return2'}).instantiate() == 2
 
 
 def test_config_with_tuple_arg_with_nested_config_could_be_overridden():
@@ -750,9 +748,7 @@ def test_override_dict_entry_resolves_absolute_at():
         return arg['x']
 
     # Override nested dict key with absolute import path
-    assert (
-        return_x.override(**{'arg.x': '@tests.support_package.cfg2.return2'}).instantiate() == 2
-    )
+    assert return_x.override(**{'arg.x': '@tests.support_package.cfg2.return2'}).instantiate() == 2
 
 
 def test_required_args_with_no_default_values_returns_all_args():
@@ -1017,6 +1013,7 @@ def test_config_copy_with_double_at_sign_in_class_positional_arg_produces_same_c
 
     assert func_copy() == func_cfg() == '@some_string'
 
+
 def test_config_dot_string_in_decorator_is_literal():
     @cfn.config(a='.return1')
     def func(a):
@@ -1028,6 +1025,7 @@ def test_config_dot_string_in_decorator_is_literal():
 def test_config_dot_string_in_class_is_literal():
     def func(x):
         return x
+
     cfg = cfn.Config(func, x='.return1')
     assert cfg() == '.return1'
 
@@ -1035,8 +1033,197 @@ def test_config_dot_string_in_class_is_literal():
 def test_config_dot_string_positional_arg_in_class_is_literal():
     def func(x):
         return x
+
     cfg = cfn.Config(func, '.return1')
     assert cfg() == '.return1'
+
+
+# ========================================
+# Tests for array and dict config references
+# ========================================
+
+
+def test_override_with_list_of_absolute_references():
+    """Test passing a list with absolute (@) import paths via override."""
+
+    @cfn.config()
+    def return_items(items):
+        return items
+
+    items = ['@tests.support_package.cfg2.return1', '@tests.support_package.cfg2.return2']
+    result = return_items.override(items=items)
+    result = result.instantiate()
+
+    # Configs are resolved to Config objects, then instantiated to their return values
+    assert result == [1, 2]
+
+
+def test_override_with_list_of_mixed_references():
+    """Test list override with mixed absolute and relative references.
+
+    When overriding entire list, all relative paths resolve to config's creator module,
+    NOT to individual element defaults. This is true even when defaults exist.
+    """
+    import tests.support_package.cfg3 as cfg3
+
+    # cfg3.process_items has default from cfg2, but when overriding entire list,
+    # all relative paths resolve to cfg3 (where config is defined)
+    result = cfg3.process_items.override(
+        items=['.func_a', '@tests.support_package.cfg2.return1', '.func_b', '.func_c']
+    ).instantiate()
+
+    # All relative paths resolve to cfg3, not to element defaults
+    assert result == ['a', 1, 'b', 'c']
+
+
+def test_override_with_empty_list():
+    """Test overriding with an empty list."""
+
+    @cfn.config(items=[1, 2, 3])
+    def return_items(items):
+        return items
+
+    result = return_items.override(items=[]).instantiate()
+    assert result == []
+
+
+def test_override_with_list_of_configs():
+    """Test passing a list of Config objects directly."""
+    import tests.support_package.cfg as cfg
+
+    @cfn.config()
+    def return_items(items):
+        return items
+
+    result = return_items.override(items=[cfg.a_cfg_value1, cfg.b_cfg_value1]).instantiate()
+
+    # Configs should be instantiated
+    assert len(result) == 2
+    assert result[0].value == 1
+    assert result[1].value == 1
+
+
+def test_override_with_dict_of_absolute_references():
+    """Test passing a dict with absolute (@) import paths via override."""
+
+    @cfn.config()
+    def return_config(config):
+        return config
+
+    result = return_config.override(
+        config={'func1': '@tests.support_package.cfg2.return1', 'func2': '@tests.support_package.cfg2.return2'}
+    ).instantiate()
+
+    assert result == {'func1': 1, 'func2': 2}
+
+
+def test_override_with_dict_of_relative_references():
+    """All items in dict override resolve relative to config's creator module.
+
+    cfg3.process_config is defined in cfg3 but has default from cfg2.
+    When overriding the entire dict, ALL relative paths resolve to cfg3.
+    """
+    import tests.support_package.cfg3 as cfg3
+
+    result = cfg3.process_config.override(
+        config={'key1': '@tests.support_package.cfg2.return1', 'key2': '.func_a', 'key3': '.func_c'}
+    ).instantiate()
+
+    # All relative paths resolve to cfg3 (config's creator module), not to key defaults
+    assert result == {'key1': 1, 'key2': 'a', 'key3': 'c'}
+
+
+def test_override_with_nested_collections():
+    """Test nested lists and dicts with config references."""
+
+    @cfn.config()
+    def return_items(items):
+        return items
+
+    result = return_items.override(
+        items=[
+            ['@tests.support_package.cfg2.return1', '@tests.support_package.cfg2.return2'],
+            {'a': '@tests.support_package.cfg2.return1', 'b': 42},
+        ]
+    ).instantiate()
+
+    assert result[0] == [1, 2]
+    assert result[1] == {'a': 1, 'b': 42}
+
+
+def test_list_override_then_indexed_override():
+    """Test that list override works, then indexed override can modify it."""
+    import tests.support_package.cfg as cfg
+
+    @cfn.config()
+    def return_items(items):
+        return items
+
+    # First override with list, then indexed override can modify it
+    cfg_final = return_items.override(**{
+        'items': ['@tests.support_package.cfg2.return1', '@tests.support_package.cfg2.return2'],
+        'items.0': cfg.a_cfg_value1,
+    })
+
+    result = cfg_final.instantiate()
+    assert len(result) == 2
+    assert isinstance(result[0], tests.support_package.subpkg.a.A)
+    assert result[0].value == 1
+    assert result[1] == 2
+
+
+def test_list_override_with_literals():
+    """Test that literal values (strings, numbers, etc.) work in lists."""
+
+    @cfn.config()
+    def return_items(items):
+        return items
+
+    result = return_items.override(items=['hello', 42, 3.14, None]).instantiate()
+    assert result == ['hello', 42, 3.14, None]
+
+
+def test_dict_override_with_mixed_types():
+    """Test dict with mixed value types."""
+    @cfn.config()
+    def return_config(config):
+        return config
+
+    result = return_config.override(
+        config={'string': 'hello', 'number': 42, 'ref': '@tests.support_package.cfg2.return1', 'none': None}
+    ).instantiate()
+
+    assert result['string'] == 'hello'
+    assert result['number'] == 42
+    assert result['ref'] == 1
+    assert result['none'] is None
+
+
+def test_list_with_escaped_at_prefix():
+    """Test that @@ escapes to literal @ in lists."""
+
+    @cfn.config()
+    def return_items(items):
+        return items
+
+    result = return_items.override(items=['@@not.a.reference', 'normal']).instantiate()
+    assert result == ['@not.a.reference', 'normal']
+
+
+def test_literal_dot_prefix_strings_via_indexed_override():
+    """Test passing literal dot-prefixed strings by using indexed override workaround.
+
+    Full list override with '.' strings attempts relative resolution.
+    To pass literals like './data' or '.env', use indexed override or
+    initialize with empty strings and override later.
+    """
+    @cfn.config(items=['', ''])
+    def return_items(items):
+        return items
+
+    # Override individual indices with literal dot-prefixed strings
+    result = return_items.override(**{'items.0': './data', 'items.1': '.env'}).instantiate()
+    assert result == ['./data', '.env']
 
 
 if __name__ == '__main__':

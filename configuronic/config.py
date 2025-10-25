@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib
 import inspect
 import posixpath
@@ -142,7 +144,7 @@ def _can_resolve_relative(default: Any | None) -> bool:
     return False
 
 
-def _resolve_value(value: Any, default: Any | None = None) -> Any:
+def _resolve_value(value: Any, default: Any | None = None, config: Config | None = None) -> Any:
     """Resolve special strings to actual Python objects.
 
     Supports two prefixes:
@@ -161,10 +163,16 @@ def _resolve_value(value: Any, default: Any | None = None) -> Any:
                 return _import_object_from_path(value)
         # Only resolve relative imports when `default` provides a valid base.
         # Treat all other leading-dot strings as literals (e.g., '../data', '.env').
-        if value.startswith(RELATIVE_PATH_PREFIX) and _can_resolve_relative(default):
+        elif value.startswith(RELATIVE_PATH_PREFIX) and _can_resolve_relative(default):
             return _resolve_relative_import(value, default)
-
-    return value
+        else:
+            return value
+    elif isinstance(value, list | tuple):
+        return type(value)(_resolve_value(item, default=config, config=None) for item in value)
+    elif isinstance(value, dict):
+        return {k: _resolve_value(v, default=config, config=None) for k, v in value.items()}
+    else:
+        return value
 
 
 def _get_value(obj, key):
@@ -281,10 +289,12 @@ class Config:
             >>> new_cfg = cfg.override(**{"model.layers": 12})
             >>> new_cfg = cfg.override(model="@my_models.CustomModel")
         """
-        overriden_cfg = self.copy()
-        # we want to keep creator module (module override was called from) for the overriden config
-        overriden_cfg._creator_module = _get_creator_module()
+        overriden_cfg = self._copy()
         overriden_cfg._override_inplace(**overrides)
+        # we want to keep creator module (module override was called from) for the overriden config
+        # But we override it after the overrides are applied, so that lists and dicts arguments
+        # are resolved relative to the original config, not the overriden config.
+        overriden_cfg._creator_module = _get_creator_module()
 
         return overriden_cfg
 
@@ -309,7 +319,7 @@ class Config:
 
     def _set_value(self, key, value):
         default = self._get_value(key) if self._has_value(key) else None
-        value = _resolve_value(value, default)
+        value = _resolve_value(value, default, config=self)
 
         if key[0].isdigit():
             self.args[int(key)] = value

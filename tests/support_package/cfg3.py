@@ -28,3 +28,9 @@ def process_items(items):
 @cfn.config(config={'key1': cfg2_return1})
 def process_config(config):
     return config
+
+
+# Simple config for testing
+@cfn.config()
+def return_items(items):
+    return items

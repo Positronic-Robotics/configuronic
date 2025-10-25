@@ -337,11 +337,11 @@ config = cfg.override(
 )
 ```
 
-**Important:**
+**Key points:**
 
 1. **Replacement semantics:** Overriding an entire list or dict completely replaces all previous values, including any defaults that were defined. This is assignment, not merging.
 
-2. **Relative resolution:** All relative paths (`.`) in a full list/dict override resolve against the **config**, not individual element defaults.
+2. **Relative resolution:** All relative paths (`.`) in a list/dict override resolve against the **config** (similar to standard resolution). Both absolute (`@`) and relative (`.`) references work recursively at all nesting levels.
 
 ```python
 # In file: myproject/training.py
@@ -352,7 +352,11 @@ def train(datasets):
 # CLI: python training.py --datasets='[".LocalDataset", ".RemoteDataset"]'
 # Result:
 #   - Original 3 defaults are completely replaced by 2 new values
-#   - Both resolve to: myproject.training.LocalDataset, myproject.training.RemoteDataset
+#   - Both resolve relative to the config: myproject.training.LocalDataset, myproject.training.RemoteDataset
+
+# Nested collections also resolve references:
+python training.py --data='[[".Dataset1", "@other.Dataset2"], {"key": ".value"}]'
+# All references (@ and .) are resolved recursively at any depth
 ```
 
 To pass literal strings starting with `.` (like `'./data'` or `'.env'`), use indexed override instead:

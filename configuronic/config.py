@@ -68,7 +68,7 @@ def _import_object_from_path(path: str) -> Any:
     assert path.startswith(INSTANTIATE_PREFIX), f"Path must start with '{INSTANTIATE_PREFIX}'"
 
     # Remove the leading '@'
-    path = path[len(INSTANTIATE_PREFIX):]
+    path = path[len(INSTANTIATE_PREFIX) :]
 
     module_path, object_path = _determine_module_by_path(path)
 
@@ -81,10 +81,11 @@ def _import_object_from_path(path: str) -> Any:
 def _get_base_path_from_default(default: Any) -> str:
     """Extract base path from different types of default values."""
     if isinstance(default, Config):
-        assert default._creator_module is not None, \
-            "Config was created in an unknown module. Probably in IPython interactive shell. " \
-            "Consider moving the config to a module."
-        return default._creator_module.__name__ + '.' + "stub_name"
+        assert default._creator_module is not None, (
+            'Config was created in an unknown module. Probably in IPython interactive shell. '
+            'Consider moving the config to a module.'
+        )
+        return default._creator_module.__name__ + '.' + 'stub_name'
     elif isinstance(default, str):
         return default.lstrip(INSTANTIATE_PREFIX)
     elif hasattr(default, '__module__') and hasattr(default, '__name__'):
@@ -121,7 +122,16 @@ def _resolve_relative_import(value: str, default: Any) -> Any:
 
     base_path = _get_base_path_from_default(default)
     new_path = _construct_relative_path(value, base_path)
-    return _import_object_from_path(f'{INSTANTIATE_PREFIX}{new_path}')
+
+    try:
+        return _import_object_from_path(f'{INSTANTIATE_PREFIX}{new_path}')
+    except (ImportError, ModuleNotFoundError, AttributeError) as e:
+        # Check if this looks like a filesystem path rather than a module path
+        hint = (
+            f'If you meant dot-prefixed string "{value}" instead of relative import "{new_path}",'
+            'please use indexed override "--key.idx={value}"',
+        )
+        raise ImportError(f'Failed to resolve relative import {value} to module {new_path}{hint}') from e
 
 
 def _can_resolve_relative(default: Any | None) -> bool:
@@ -154,11 +164,15 @@ def _resolve_value(value: Any, default: Any | None = None, config: Config | None
       :class:`Config`, an importable object (class/function), an Enum value, or
       a string starting with ``@``. Otherwise, treat leading-dot strings as
       literals (e.g., ``../data``, ``./file``, ``.env``).
+
+    For lists and dicts:
+    - Both absolute (``@``) and relative (``.``) references are resolved recursively at all nesting levels
+    - Nested collections inherit the same resolution context from their parent
     """
     if isinstance(value, str):
         if value.startswith(INSTANTIATE_PREFIX):
-            if value[len(INSTANTIATE_PREFIX):].startswith(INSTANTIATE_PREFIX):
-                return value[len(INSTANTIATE_PREFIX):]
+            if value[len(INSTANTIATE_PREFIX) :].startswith(INSTANTIATE_PREFIX):
+                return value[len(INSTANTIATE_PREFIX) :]
             else:
                 return _import_object_from_path(value)
         # Only resolve relative imports when `default` provides a valid base.
@@ -168,9 +182,9 @@ def _resolve_value(value: Any, default: Any | None = None, config: Config | None
         else:
             return value
     elif isinstance(value, list | tuple):
-        return type(value)(_resolve_value(item, default=config, config=None) for item in value)
+        return type(value)(_resolve_value(item, default=config, config=config) for item in value)
     elif isinstance(value, dict):
-        return {k: _resolve_value(v, default=config, config=None) for k, v in value.items()}
+        return {k: _resolve_value(v, default=config, config=config) for k, v in value.items()}
     else:
         return value
 
@@ -268,7 +282,7 @@ class Config:
 
         self._creator_module = _get_creator_module()
 
-    def override(self, **overrides) -> 'Config':
+    def override(self, **overrides) -> Config:
         """
         Create a new Config with updated parameters.
 
@@ -286,8 +300,8 @@ class Config:
 
         Example:
             >>> cfg = Config(Pipeline, model=Config(MyModel, layers=6))
-            >>> new_cfg = cfg.override(**{"model.layers": 12})
-            >>> new_cfg = cfg.override(model="@my_models.CustomModel")
+            >>> new_cfg = cfg.override(**{'model.layers': 12})
+            >>> new_cfg = cfg.override(model='@my_models.CustomModel')
         """
         overriden_cfg = self._copy()
         overriden_cfg._override_inplace(**overrides)
@@ -308,10 +322,8 @@ class Config:
                 for i, key in enumerate(key_list[:-1]):
                     current_obj = _get_value(current_obj, key)
                     if current_obj is None:
-                        path_to_not_found_arg = '.'.join(key_list[:i + 1])
-                        raise ConfigError(
-                            f"Argument '{path_to_not_found_arg}' not found in config"
-                        )
+                        path_to_not_found_arg = '.'.join(key_list[: i + 1])
+                        raise ConfigError(f"Argument '{path_to_not_found_arg}' not found in config")
 
                 _set_value(current_obj, key_list[-1], value)
             except Exception as e:
@@ -402,7 +414,7 @@ class Config:
     def __str__(self):
         return yaml.dump(self._to_dict(), default_flow_style=None, sort_keys=False, width=140)
 
-    def copy(self) -> 'Config':
+    def copy(self) -> Config:
         """
         Recursively copy config signatures.
         """
@@ -451,6 +463,7 @@ class Config:
         """
         return self.override(**kwargs).instantiate()
 
+
 def config(**kwargs) -> Callable[[Callable], Config]:
     """
     Decorator to create a Config object.
@@ -479,4 +492,5 @@ def config(**kwargs) -> Callable[[Callable], Config]:
         config = Config(target, **kwargs)
         config._creator_module = _get_creator_module()
         return config
+
     return _config_decorator

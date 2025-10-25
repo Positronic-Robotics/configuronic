@@ -1226,5 +1226,28 @@ def test_literal_dot_prefix_strings_via_indexed_override():
     assert result == ['./data', '.env']
 
 
+def test_nested_references_resolved_at_all_depths():
+    """Test that config references are resolved at all nesting levels.
+
+    Both absolute (@) and relative (.) references should be resolved
+    recursively throughout nested collections.
+    """
+    # Define in cfg3 module context so relative imports resolve there
+    import tests.support_package.cfg3 as cfg3
+
+    # Both top-level and nested references should resolve
+    result = cfg3.return_items.override(
+        items=[
+            '.func_a',  # Top-level relative: resolves to cfg3.func_a
+            ['@tests.support_package.cfg2.return1', '.func_b'],  # Nested: both resolve
+            {'abs': '@tests.support_package.cfg2.return2', 'rel': '.func_c'},  # Nested dict: both resolve
+        ]
+    ).instantiate()
+
+    assert result[0] == 'a'  # Top-level relative resolved
+    assert result[1] == [1, 'b']  # Nested absolute and relative resolved
+    assert result[2] == {'abs': 2, 'rel': 'c'}  # Nested dict references resolved
+
+
 if __name__ == '__main__':
     pytest.main()

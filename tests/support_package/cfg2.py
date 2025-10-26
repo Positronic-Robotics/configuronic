@@ -14,3 +14,8 @@ def return1():
 @cfn.config()
 def return2():
     return 2
+
+
+@cfn.config()
+def return3():
+    return 3

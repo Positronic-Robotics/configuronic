@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0] - 2025-10-25
+
+### Added
+- Support for passing entire lists and dictionaries containing config references from CLI and Python code. You can now use `--items='["@module.Obj1", ".Obj2"]'` or `--config='{"key": "@module.Value"}'` to override collections with config references.
+- Both absolute (`@`) and relative (`.`) references are resolved recursively at all nesting levels within lists and dicts, providing consistent behavior throughout nested structures.
+- All relative paths (`.`) in list/dict overrides resolve against the config (similar to standard resolution). Indexed overrides (e.g., `--items.0='.value'`) continue to resolve relative to the element's default.
+
+### Changed
+- **Breaking:** Dot-prefixed strings in list/dict overrides now trigger relative import resolution. To pass literal strings like `'./data'` or `'.env'`, use indexed override syntax: `--paths='["",""]' --paths.0='./data' --paths.1='.env'`.
+
 ## [0.2.3] - 2025-09-25
 
 ### Fixed

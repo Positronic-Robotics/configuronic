@@ -289,7 +289,7 @@ Without `copy()`, `.local_function` would try to resolve in `configs.base` and f
 
 ### Lists and Dictionaries
 
-Configuronic seamlessly handles nested data structures:
+Configuronic seamlessly handles nested data structures and supports config references within them:
 
 ```python
 simulation_cfg = cfn.Config(
@@ -305,11 +305,65 @@ simulation_cfg = cfn.Config(
     }
 )
 
-# Override specific items
+# Override specific items using indexed notation
 modified_sim = simulation_cfg.override(**{
     "loaders.0.camera_config.fps": 60,  # First loader's camera FPS
     "cameras.main.position": [0, 0, 2]   # Main camera position
 })
+
+# Override entire lists/dicts with config references
+from_cli = simulation_cfg.override(
+    loaders=[
+        '@my_loaders.CameraLoader',
+        '@my_loaders.ObjectLoader',
+        '.CustomLightingLoader'  # Relative to simulation_cfg's module
+    ]
+)
+```
+
+#### Lists and Dicts with Config References
+
+You can pass entire lists or dictionaries containing config references (using `@` or `.` syntax):
+
+```python
+# From CLI (we rely on fire's parsing behavior)
+python script.py --models='["@transformers.BertModel", "@transformers.GPT2Model"]'
+python script.py --cameras='{"left": "@opencv.Camera", "right": ".CustomCamera"}'
+
+# From Python code
+config = cfg.override(
+    models=['@transformers.BertModel', '@transformers.GPT2Model'],
+    datasets=['.ImageNetDataset', '.CocoDataset']
+)
+```
+
+**Key points:**
+
+1. **Replacement semantics:** Overriding an entire list or dict completely replaces all previous values, including any defaults that were defined. This is assignment, not merging.
+
+2. **Relative resolution:** All relative paths (`.`) in a list/dict override resolve against the **config** (similar to standard resolution). Both absolute (`@`) and relative (`.`) references work recursively at all nesting levels.
+
+```python
+# In file: myproject/training.py
+@cfn.config(datasets=[SomeDefaultDataset, AnotherDefault, ThirdDefault])
+def train(datasets):
+    pass
+
+# CLI: python training.py --datasets='[".LocalDataset", ".RemoteDataset"]'
+# Result:
+#   - Original 3 defaults are completely replaced by 2 new values
+#   - Both resolve relative to the config: myproject.training.LocalDataset, myproject.training.RemoteDataset
+
+# Nested collections also resolve references:
+python training.py --data='[[".Dataset1", "@other.Dataset2"], {"key": ".value"}]'
+# All references (@ and .) are resolved recursively at any depth
+```
+
+To pass literal strings starting with `.` (like `'./data'` or `'.env'`), use indexed override instead:
+
+```bash
+# Initialize with empty strings, then override individually
+python script.py --paths='["",""]' --paths.0='./data' --paths.1='.env'
 ```
 
 ### Configuration Inheritance

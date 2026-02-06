@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.1] - 2026-02-06
+
+### Fixed
+- Fix relative import resolution when module is run via `python -m`. The `_creator_module.__name__` is `'__main__'` in that case, breaking relative path computation. Now uses `__spec__.name` which preserves the real module path.
+
 ## [0.3.0] - 2025-10-25
 
 ### Added

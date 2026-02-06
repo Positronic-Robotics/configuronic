@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from enum import Enum
 
 import pytest
@@ -1185,6 +1187,7 @@ def test_list_override_with_literals():
 
 def test_dict_override_with_mixed_types():
     """Test dict with mixed value types."""
+
     @cfn.config()
     def return_config(config):
         return config
@@ -1217,6 +1220,7 @@ def test_literal_dot_prefix_strings_via_indexed_override():
     To pass literals like './data' or '.env', use indexed override or
     initialize with empty strings and override later.
     """
+
     @cfn.config(items=['', ''])
     def return_items(items):
         return items
@@ -1247,6 +1251,15 @@ def test_nested_references_resolved_at_all_depths():
     assert result[0] == 'a'  # Top-level relative resolved
     assert result[1] == [1, 'b']  # Nested absolute and relative resolved
     assert result[2] == {'abs': 2, 'rel': 'c'}  # Nested dict references resolved
+
+
+def test_relative_import_uses_spec_name_when_module_name_is_main():
+    result = subprocess.run(
+        [sys.executable, '-m', 'tests.support_package.main_runner'],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f'stdout: {result.stdout}\nstderr: {result.stderr}'
 
 
 if __name__ == '__main__':

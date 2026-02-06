@@ -85,7 +85,10 @@ def _get_base_path_from_default(default: Any) -> str:
             'Config was created in an unknown module. Probably in IPython interactive shell. '
             'Consider moving the config to a module.'
         )
-        return default._creator_module.__name__ + '.' + 'stub_name'
+        module = default._creator_module
+        name = getattr(module.__spec__, 'name', None) if hasattr(module, '__spec__') else None
+        name = name or module.__name__
+        return name + '.' + 'stub_name'
     elif isinstance(default, str):
         return default.lstrip(INSTANTIATE_PREFIX)
     elif hasattr(default, '__module__') and hasattr(default, '__name__'):

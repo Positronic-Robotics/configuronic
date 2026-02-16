@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.0] - 2026-02-16
+
+### Added
+- Support for `python -m configuronic @path.to.module.Config [--param=value ...]`. Any `Config` object on the Python path can now be run directly without a wrapper script.
+
 ## [0.3.1] - 2026-02-06
 
 ### Fixed

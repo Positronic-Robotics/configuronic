@@ -306,3 +306,22 @@ def test_cli_nested_group_rejects_unknown_option(capfd):
         with pytest.raises(ValueError) as e:
             cfn.cli(tree)
         assert "Command '--typo' not found under 'math'. Available commands: ['add']" in str(e.value)
+
+
+def test_cli_group_rejects_unknown_option_even_with_help(capfd):
+    """An unknown group-level option must error even when `--help` is also present."""
+
+    @cfn.config()
+    def add(a):
+        print(a)
+
+    with patch('sys.argv', ['script.py', '--typo', '--help']):
+        with pytest.raises(ValueError) as e:
+            cfn.cli({'func': add})
+        assert "Command '--typo' not found. Available commands: ['func']" in str(e.value)
+
+    tree = {'math': {'add': add}}
+    with patch('sys.argv', ['script.py', 'math', '--typo', '--help']):
+        with pytest.raises(ValueError) as e:
+            cfn.cli(tree)
+        assert "Command '--typo' not found under 'math'. Available commands: ['add']" in str(e.value)

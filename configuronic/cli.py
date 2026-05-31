@@ -120,15 +120,16 @@ def _cli_command_tree(tree: CommandTree):
     args = sys.argv[1:]
     node, path, rest = _walk_tree(tree, args)
     if isinstance(node, dict):
-        # A group node (root or intermediate): list its children — but only for no
-        # args or an explicit ``--help``. An option-looking token before any leaf is
-        # selected (e.g. ``--typo``) is a mistake, not a request for help: reject it,
-        # matching the flat-dict "Command not found" behavior instead of silently
-        # printing help and exiting 0.
-        if rest and '--help' not in rest:
+        # A group node (root or intermediate): list its children — but only for a bare
+        # group or an exact ``--help`` request. Any other option-looking token (e.g.
+        # ``--typo``), even when ``--help`` is also present, is a mistake rather than a
+        # request for help: reject it, matching the flat-dict "Command not found"
+        # behavior instead of silently printing help and exiting 0.
+        unknown = [token for token in rest if token != '--help']
+        if unknown:
             available = list(node.keys())
             scope = f" under '{' '.join(path)}'" if path else ''
-            raise ValueError(f"Command '{rest[0]}' not found{scope}. Available commands: {available}")
+            raise ValueError(f"Command '{unknown[0]}' not found{scope}. Available commands: {available}")
         _print_group_help(node, path)
         return None
     # Config leaf: remaining args are its overrides. Handle ``--help`` ourselves so

@@ -266,3 +266,43 @@ def test_cli_nested_tree_leaf_help_lists_required_args(capfd):
         out, err = capfd.readouterr()
         assert 'a: <REQUIRED>' in out
         assert 'b: <REQUIRED>' in out
+
+
+def test_cli_leaf_help_reflects_overrides(capfd):
+    """`cmd --a=1 --help` must apply the override before printing help, so `a` is no
+    longer reported as required."""
+
+    @cfn.config()
+    def add(a, b):
+        print(a + b)
+
+    with patch('sys.argv', ['script.py', 'func', '--a=1', '--help']):
+        cfn.cli({'func': add})
+        out, err = capfd.readouterr()
+        assert 'b: <REQUIRED>' in out
+        assert 'a: <REQUIRED>' not in out
+
+
+def test_cli_group_rejects_unknown_option(capfd):
+    """An option-looking token before any leaf is selected is a typo, not a help request."""
+
+    @cfn.config()
+    def func1(a):
+        print(a)
+
+    with patch('sys.argv', ['script.py', '--typo']):
+        with pytest.raises(ValueError) as e:
+            cfn.cli({'func1': func1})
+        assert "Command '--typo' not found. Available commands: ['func1']" in str(e.value)
+
+
+def test_cli_nested_group_rejects_unknown_option(capfd):
+    @cfn.config()
+    def add(a):
+        print(a)
+
+    tree = {'math': {'add': add}}
+    with patch('sys.argv', ['script.py', 'math', '--typo']):
+        with pytest.raises(ValueError) as e:
+            cfn.cli(tree)
+        assert "Command '--typo' not found under 'math'. Available commands: ['add']" in str(e.value)

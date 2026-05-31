@@ -120,17 +120,27 @@ def _cli_command_tree(tree: CommandTree):
     args = sys.argv[1:]
     node, path, rest = _walk_tree(tree, args)
     if isinstance(node, dict):
-        # A group node (root or intermediate): list its children. Reached when no
-        # positional selects a leaf — e.g. no args, a trailing ``--help``, or a
-        # bare group name.
+        # A group node (root or intermediate): list its children — but only for no
+        # args or an explicit ``--help``. An option-looking token before any leaf is
+        # selected (e.g. ``--typo``) is a mistake, not a request for help: reject it,
+        # matching the flat-dict "Command not found" behavior instead of silently
+        # printing help and exiting 0.
+        if rest and '--help' not in rest:
+            available = list(node.keys())
+            scope = f" under '{' '.join(path)}'" if path else ''
+            raise ValueError(f"Command '{rest[0]}' not found{scope}. Available commands: {available}")
         _print_group_help(node, path)
         return None
     # Config leaf: remaining args are its overrides. Handle ``--help`` ourselves so
-    # fire doesn't intercept it, then let fire parse the ``--kwargs`` (``command=rest``
-    # keeps fire from re-reading the already-consumed positional path off sys.argv).
+    # fire doesn't intercept it, but still apply any overrides first so the help
+    # reflects the overridden config (``command=`` keeps fire from re-reading the
+    # already-consumed positional path off sys.argv).
     runner = _cli_single_command(node)
     if '--help' in rest:
-        return runner(help=True)
+        overrides = [a for a in rest if a != '--help']
+        if not overrides:
+            return runner(help=True)
+        return fire.Fire(lambda **kwargs: runner(help=True, **kwargs), command=overrides)
     return fire.Fire(runner, command=rest)
 
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.0] - 2026-05-31
+
+### Added
+- Nested command trees in `cfn.cli`. The dict form now accepts arbitrarily-nested dicts of `Config`s: positional args walk the tree by key until a `Config` leaf, then `--kwargs` override and instantiate it (e.g. `script.py group subcommand --param=value`). `--help` lists child commands at a group node and required args at a leaf. The previous flat `{'cmd': cfg}` form is the depth-1 special case and is unchanged.
+
 ## [0.4.0] - 2026-02-16
 
 ### Added

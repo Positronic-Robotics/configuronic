@@ -29,6 +29,24 @@ def _to_dict(obj):
         return obj
 
 
+def _copy_value(value):
+    """Recursively copy a config value so variants don't share mutable state.
+
+    Nested ``Config`` instances are copied; ``dict``/``list``/``tuple`` containers are
+    rebuilt so overriding through them (e.g. ``cameras.left.fps``) never mutates the
+    base. Other values (ints, strings, arbitrary objects) are shared by reference —
+    overrides replace them rather than mutate them in place.
+    """
+    if isinstance(value, Config):
+        return value._copy()
+    elif isinstance(value, dict):
+        return {k: _copy_value(v) for k, v in value.items()}
+    elif isinstance(value, list | tuple):
+        return type(value)(_copy_value(v) for v in value)
+    else:
+        return value
+
+
 def _determine_module_by_path(path: str) -> tuple[str, str]:
     module_path = path.split('.')
     object_path = deque([])
@@ -304,10 +322,9 @@ class Config:
         - concrete (non-``Config``) values — ints, floats, objects, ``Config`` instances,
           lists, dicts — pass straight through and replace the previous value.
 
-        Note: overrides apply to a copy, so changing top-level args or nested ``Config``
-        values leaves the base untouched. Plain ``dict``/``list``/``tuple`` arguments are
-        shared with the base, though — a dotted override reaching *through* a container
-        (e.g. ``"cameras.left.fps"``) can mutate it; replace the whole container instead.
+        Note: overrides apply to an independent copy, so a variant never mutates the
+        base — even for dotted overrides that reach through ``dict``/``list``/``tuple``
+        containers (e.g. ``"cameras.left.fps"``), which are copied too.
 
         Args:
             **overrides: Parameter paths and their new values.
@@ -461,9 +478,9 @@ class Config:
         Recursively copy config signatures.
         """
 
-        new_args = [arg._copy() if isinstance(arg, Config) else arg for arg in self.args]
+        new_args = [_copy_value(arg) for arg in self.args]
 
-        new_kwargs = {key: value._copy() if isinstance(value, Config) else value for key, value in self.kwargs.items()}
+        new_kwargs = {key: _copy_value(value) for key, value in self.kwargs.items()}
 
         cfg = Config(self.target)
         cfg.args = new_args

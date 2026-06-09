@@ -184,49 +184,33 @@ When two configs share a factory and differ only in their arguments, prefer
 override values pass straight through, and dotted keys let you tweak nested
 sub-configs without redefining the base.
 
-### Instantiation semantics (shared instances)
+### Instantiation semantics
 
-When a config is instantiated, every `Config` it references is built **independently** —
-configuronic does not cache or reuse instances. So if the same sub-config appears in
-more than one place, each place gets its **own** freshly-built object.
+A config is just a **closure**: it remembers a callable and its arguments, and
+instantiating it calls that callable and returns a fresh result. There is no caching —
+every referenced `Config` is built independently, so referencing the same sub-config
+from two places produces two separate objects.
 
-Most of the time that's exactly what you want. It only matters when you intend several
-components to share **one** object — for example a single database connection, an open
-session, or a random generator with a fixed seed. Referencing the same sub-config from
-several slots will *not* share that object; you silently get separate copies, and state
-set through one is invisible to the others.
+This shapes how you share an object. When several components depend on the **same**
+object — a database connection, a session, a seeded random generator — bind them
+together: take that object as a single argument and build the dependents from it. The
+closure then captures one shared instance.
 
 ```python
 @cfn.config(url="postgres://localhost/app")
 def database(url: str):
     return Database(url)
 
+# `Reader` and `Writer` must talk to the same database, so they belong together:
+# `db` is one argument, instantiated once, and shared by both.
 @cfn.config(db=database)
-def reader(db):
-    ...
-
-@cfn.config(db=database)
-def writer(db):
-    ...
-
-# `database` is referenced twice, so `reader` and `writer` each get their OWN
-# Database — two connections, not one shared connection.
-@cfn.config(reader=reader, writer=writer)
-def app(reader, writer):
-    ...
-```
-
-If you really need one shared instance, create it once inside a single config function
-and pass it to everyone that needs it, instead of referencing the same sub-config from
-each slot:
-
-```python
-# ✅ One Database is created and shared by both the reader and the writer.
-@cfn.config(url="postgres://localhost/app")
-def app(url: str):
-    db = Database(url)
+def app(db):
     return App(reader=Reader(db), writer=Writer(db))
 ```
+
+Don't try to share by pointing several slots at the same sub-config — each slot would
+build its own copy, which is the independent-instantiation rule above, not sharing.
+Keep things that depend on one object bound together instead.
 
 ## 🌍 Real-World Examples
 

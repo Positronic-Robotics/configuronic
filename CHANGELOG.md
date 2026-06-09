@@ -1,19 +1,15 @@
 # Changelog
 
-## [0.6.0] - 2026-06-09
-
-### Added
-- Default command in `cfn.cli(dict)` via an empty-string (`''`) key (#28). The `''` config is run when a command-tree group is reached without naming a child — i.e. with no args or a leading option (`python script.py` or `python script.py --param=value`). A non-option word that isn't a known command still errors, so typos don't silently fall through. `--help` lists the group's children and flags the default. Works at the root and at intermediate group nodes.
-
-### Documentation
-- Documented the core "one general config + named `.override()` variants" idiom and contrasted it with the duplicate-config-functions anti-pattern (#29). Added README sections "Variants via `.override()`" and "Instantiation semantics", and expanded the `Config.override`, `Config.instantiate`, and `cli` docstrings.
-- Clarified instantiation semantics: each `Config` reference is instantiated independently (no memoization); to share one instance across slots, return the group as a bundle from a single config.
-- Updated the multi-config Best Practices example to use `cfn.cli(dict)` (with a default command) instead of manual `sys.argv` dispatch.
-
-## [0.5.0] - 2026-05-31
+## [0.5.0] - 2026-06-09
 
 ### Added
 - Nested command trees in `cfn.cli`. The dict form now accepts arbitrarily-nested dicts of `Config`s: positional args walk the tree by key until a `Config` leaf, then `--kwargs` override and instantiate it (e.g. `script.py group subcommand --param=value`). `--help` lists child commands at a group node and required args at a leaf. The previous flat `{'cmd': cfg}` form is the depth-1 special case and is unchanged.
+- Default command in `cfn.cli(dict)` via an empty-string (`''`) key (#28). The `''` config is run when a command-tree group is reached without naming a child — i.e. with no args or a leading option (`python script.py` or `python script.py --param=value`). A non-option word that isn't a known command still errors, so typos don't silently fall through. `--help` lists the group's children and flags the default. Works at the root and at intermediate group nodes.
+
+### Documentation
+- Documented the core "one general config + named `.override()` variants" idiom and contrasted it with writing near-duplicate config functions (#29). Added README sections "Variants via `.override()`" and "Instantiation semantics", and expanded the `Config.override`, `Config.instantiate`, and `cli` docstrings.
+- Clarified instantiation semantics: a config is a closure and each `Config` reference is instantiated independently (no caching); to share one object across components, bind them together by passing it as a single argument.
+- Updated the multi-config Best Practices example to use `cfn.cli(dict)` (with a default command) instead of manual `sys.argv` dispatch.
 
 ## [0.4.0] - 2026-02-16
 

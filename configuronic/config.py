@@ -378,13 +378,12 @@ class Config:
         """
         Instatiate the target function with the given arguments and keyword arguments.
 
-        Instantiation semantics: every referenced ``Config`` is built independently —
-        configuronic does not cache or reuse instances. If the same sub-config appears
-        in more than one place, each place gets its own freshly-built object. This
-        matters only when you intend several components to share one object (e.g. a
-        single connection or session): to do that, create the object once inside a
-        single config function and pass it to everyone that needs it, instead of
-        referencing the same sub-config from each slot.
+        Instantiation semantics: a config is a closure, and every referenced ``Config``
+        is built independently — there is no caching. Referencing the same sub-config
+        from two places produces two separate objects. To let several components share
+        one object, bind them together: take that object as a single argument and build
+        the dependents from it, rather than pointing several slots at the same
+        sub-config.
 
         Returns:
             The instantiated target function.

@@ -374,6 +374,25 @@ def test_cli_default_command_help_lists_commands_and_flags_default(capfd):
         assert 'python script.py sim --x=<REQUIRED> # Run in simulation' in out
 
 
+def test_cli_default_command_help_with_overrides_reflects_them(capfd):
+    """`--flag --help` on a default command applies the override before printing help,
+    mirroring the leaf path — so an overridden arg is no longer reported as required."""
+
+    @cfn.config()
+    def default_func(a, b):
+        print(f'{a} {b}')
+
+    @cfn.config()
+    def sim(x):
+        print(f'sim: {x}')
+
+    with patch('sys.argv', ['script.py', '--a=1', '--help']):
+        cfn.cli({'': default_func, 'sim': sim})
+        out, err = capfd.readouterr()
+        assert 'b: <REQUIRED>' in out
+        assert 'a: <REQUIRED>' not in out
+
+
 def test_cli_default_command_in_nested_group(capfd):
     """A default command works at an intermediate group node too."""
 

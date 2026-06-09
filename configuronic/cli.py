@@ -133,15 +133,19 @@ def _cli_command_tree(tree: CommandTree):
     if isinstance(node, dict):
         default = node.get(DEFAULT_COMMAND)
         if default is not None:
-            # A group with a default command. ``--help`` lists the group's children
-            # (flagging the default); otherwise run the default, passing the remaining
-            # tokens as overrides. A non-option positional that isn't a known command
-            # already raised in ``_walk_tree``, so ``rest`` here is empty or starts with
-            # an option token.
-            if '--help' in rest:
+            # A group with a default command. A bare ``--help`` lists the group's
+            # children (flagging the default). Otherwise run the default, passing the
+            # remaining tokens as overrides — including ``--x=v --help``, where we apply
+            # the overrides and show the default command's help, mirroring the leaf path.
+            # A non-option positional that isn't a known command already raised in
+            # ``_walk_tree``, so ``rest`` here is empty or starts with an option token.
+            overrides = [a for a in rest if a != '--help']
+            if '--help' in rest and not overrides:
                 _print_group_help(node, path)
                 return None
             runner = _cli_single_command(default)
+            if '--help' in rest:
+                return fire.Fire(lambda **kwargs: runner(help=True, **kwargs), command=overrides)
             return fire.Fire(runner, command=rest)
         # A group node (root or intermediate): list its children — but only for a bare
         # group or an exact ``--help`` request. Any other option-looking token (e.g.

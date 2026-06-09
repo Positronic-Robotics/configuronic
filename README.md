@@ -186,35 +186,46 @@ sub-configs without redefining the base.
 
 ### Instantiation semantics (shared instances)
 
-Each referenced `Config` is instantiated **independently** — there is **no instance
-memoization or identity sharing**. If the same sub-config is referenced from several
-slots, it is built **once per slot**, producing that many distinct objects:
+When a config is instantiated, every `Config` it references is built **independently** —
+configuronic does not cache or reuse instances. So if the same sub-config appears in
+more than one place, each place gets its **own** freshly-built object.
+
+Most of the time that's exactly what you want. It only matters when you intend several
+components to share **one** object — for example a single database connection, an open
+session, or a random generator with a fixed seed. Referencing the same sub-config from
+several slots will *not* share that object; you silently get separate copies, and state
+set through one is invisible to the others.
 
 ```python
-mujoco = cfn.Config(MujocoSim, model_path="scene.xml")
+@cfn.config(url="postgres://localhost/app")
+def database(url: str):
+    return Database(url)
 
-# ❌ Three references -> THREE separate MujocoSim instances, not one shared sim.
-embodiment = cfn.Config(
-    Embodiment,
-    robot_arm=cfn.Config(SimArm, sim=mujoco),
-    gripper=cfn.Config(SimGripper, sim=mujoco),
-    cameras={'wrist': cfn.Config(SimCamera, sim=mujoco)},
-)
+@cfn.config(db=database)
+def reader(db):
+    ...
+
+@cfn.config(db=database)
+def writer(db):
+    ...
+
+# `database` is referenced twice, so `reader` and `writer` each get their OWN
+# Database — two connections, not one shared connection.
+@cfn.config(reader=reader, writer=writer)
+def app(reader, writer):
+    ...
 ```
 
-To share a single instance across slots, build it inside one config that returns the
-group as a **bundle** (a dataclass, namedtuple, or dict), and reference that bundle:
+If you really need one shared instance, create it once inside a single config function
+and pass it to everyone that needs it, instead of referencing the same sub-config from
+each slot:
 
 ```python
-# ✅ Build the shared sim and all devices together; one MujocoSim is created.
-@cfn.config(model_path="scene.xml")
-def sim_devices(model_path: str):
-    sim = MujocoSim(model_path)
-    return {
-        'robot_arm': SimArm(sim),
-        'gripper': SimGripper(sim),
-        'cameras': {'wrist': SimCamera(sim)},
-    }
+# ✅ One Database is created and shared by both the reader and the writer.
+@cfn.config(url="postgres://localhost/app")
+def app(url: str):
+    db = Database(url)
+    return App(reader=Reader(db), writer=Writer(db))
 ```
 
 ## 🌍 Real-World Examples

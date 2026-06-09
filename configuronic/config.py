@@ -378,13 +378,13 @@ class Config:
         """
         Instatiate the target function with the given arguments and keyword arguments.
 
-        Instantiation semantics: every referenced ``Config`` is instantiated
-        independently — there is no instance memoization or identity sharing. If the
-        same sub-config object is referenced from several slots, it is built once *per
-        slot*, yielding that many distinct instances. To share a single instance across
-        multiple slots, build it inside one config that returns the group as a bundle
-        (e.g. a dataclass or dict), and reference that bundle, rather than referencing
-        the same sub-config from each slot.
+        Instantiation semantics: every referenced ``Config`` is built independently —
+        configuronic does not cache or reuse instances. If the same sub-config appears
+        in more than one place, each place gets its own freshly-built object. This
+        matters only when you intend several components to share one object (e.g. a
+        single connection or session): to do that, create the object once inside a
+        single config function and pass it to everyone that needs it, instead of
+        referencing the same sub-config from each slot.
 
         Returns:
             The instantiated target function.

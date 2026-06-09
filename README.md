@@ -163,12 +163,13 @@ python embodiment.py droid --gripper="@my.grippers.Wsg"
 python embodiment.py sim --robot_arm.collision_coeff=4.0
 ```
 
-**Less recommended:** writing several near-duplicate `@cfn.config` functions that
-each rebuild the same object and differ only in a few arguments.
+**Not recommended:** writing several near-duplicate `@cfn.config` functions that each
+rebuild the same object and differ in only a few arguments — a later change to the
+shared construction then has to be copied into every one, whereas `.override()` variants
+inherit it automatically (DRY).
 
 ```python
-# Works, but duplicates the construction logic, which can drift out of sync and is
-# harder to override from the CLI.
+# Each function re-declares the construction, so every change must be duplicated.
 @cfn.config(robot_arm=..., gripper=..., cameras={...})
 def droid(robot_arm, gripper, cameras):
     return build_embodiment(robot_arm, gripper, cameras, simulated=False)
@@ -178,11 +179,6 @@ def sim(mujoco_model_path, ...):
     ...  # rebuild devices by hand
     return build_embodiment(robot_arm, gripper, cameras, simulated=True)
 ```
-
-When two configs share a factory and differ only in their arguments, prefer
-`base.override(...)` over a second `@cfn.config` function. Concrete (non-`Config`)
-override values pass straight through, and dotted keys let you tweak nested
-sub-configs without redefining the base.
 
 ### Instantiation semantics
 
@@ -207,10 +203,6 @@ def database(url: str):
 def app(db):
     return App(reader=Reader(db), writer=Writer(db))
 ```
-
-Don't try to share by pointing several slots at the same sub-config — each slot would
-build its own copy, which is the independent-instantiation rule above, not sharing.
-Keep things that depend on one object bound together instead.
 
 ## 🌍 Real-World Examples
 

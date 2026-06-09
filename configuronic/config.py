@@ -294,9 +294,9 @@ class Config:
         rather than writing several near-duplicate config functions. Pass a dict of such
         variants to :func:`configuronic.cli` to expose them as CLI commands.
 
-        Keys may be nested using dot notation to reach into sub-configs and into
-        list/dict slots (e.g. ``"model.layers"``, ``"robot_arm.collision_coeff"``,
-        ``"cameras.left.fps"``, ``"loaders.0.fps"``).
+        Keys may be nested using dot notation to reach into sub-configs (e.g.
+        ``"model.layers"``, ``"robot_arm.collision_coeff"``) and into list/dict slots
+        (e.g. ``"cameras.left"``, ``"loaders.0"``).
 
         Values are resolved by type:
         - strings may use absolute imports (``@module.path.Object``) or relative
@@ -304,8 +304,10 @@ class Config:
         - concrete (non-``Config``) values — ints, floats, objects, ``Config`` instances,
           lists, dicts — pass straight through and replace the previous value.
 
-        Note: each override produces an independent copy; overriding a variant never
-        mutates the base. See :meth:`instantiate` for how shared sub-configs are built.
+        Note: overrides apply to a copy, so changing top-level args or nested ``Config``
+        values leaves the base untouched. Plain ``dict``/``list``/``tuple`` arguments are
+        shared with the base, though — a dotted override reaching *through* a container
+        (e.g. ``"cameras.left.fps"``) can mutate it; replace the whole container instead.
 
         Args:
             **overrides: Parameter paths and their new values.

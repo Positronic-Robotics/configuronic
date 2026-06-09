@@ -197,6 +197,17 @@ def cli(config: Config | CommandTree):
         >>> # Shell call: python script.py --help
         >>> # Shell call: python script.py sum --help
 
+        The more common real-world shape: the dict values are variants of one general
+        config, derived with ``.override()`` instead of duplicate config functions.
+
+        >>> single_arm = cfn.Config(build, robot_arm=franka, gripper=robotiq)
+        >>> cfn.cli({
+        ...     'droid': single_arm.override(robot_arm=franka_droid),
+        ...     'sim': single_arm.override(robot_arm=franka_sim),
+        ... })
+        >>> # Shell call: python script.py droid --gripper=@my.grippers.Wsg
+        >>> # Shell call: python script.py sim --robot_arm.collision_coeff=2.0
+
         >>> cfn.cli({'math': {'sum': sum, 'product': product}})
         >>> # Shell call: python script.py math sum --a 1 --b 2
         >>> # Shell call: python script.py math --help

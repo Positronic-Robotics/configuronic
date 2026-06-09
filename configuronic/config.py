@@ -289,8 +289,23 @@ class Config:
         """
         Create a new Config with updated parameters.
 
-        Supports nested parameter updates using dot notation (e.g. "model.layers").
-        Handles absolute imports (@) and relative imports (.).
+        This is the idiomatic way to derive named variants from one general config:
+        define a single base ``Config`` and produce each variant with ``.override()``,
+        rather than writing several near-duplicate config functions. Pass a dict of such
+        variants to :func:`configuronic.cli` to expose them as CLI commands.
+
+        Keys may be nested using dot notation to reach into sub-configs and into
+        list/dict slots (e.g. ``"model.layers"``, ``"robot_arm.collision_coeff"``,
+        ``"cameras.left.fps"``, ``"loaders.0.fps"``).
+
+        Values are resolved by type:
+        - strings may use absolute imports (``@module.path.Object``) or relative
+          imports (``.SiblingObject``);
+        - concrete (non-``Config``) values — ints, floats, objects, ``Config`` instances,
+          lists, dicts — pass straight through and replace the previous value.
+
+        Note: each override produces an independent copy; overriding a variant never
+        mutates the base. See :meth:`instantiate` for how shared sub-configs are built.
 
         Args:
             **overrides: Parameter paths and their new values.
@@ -305,6 +320,12 @@ class Config:
             >>> cfg = Config(Pipeline, model=Config(MyModel, layers=6))
             >>> new_cfg = cfg.override(**{'model.layers': 12})
             >>> new_cfg = cfg.override(model='@my_models.CustomModel')
+
+            >>> # One general config, named variants via .override():
+            >>> single_arm = cfn.Config(build, robot_arm=franka, gripper=robotiq)
+            >>> droid = single_arm.override(robot_arm=franka_droid)
+            >>> sim = single_arm.override(robot_arm=franka_sim, **{'robot_arm.collision_coeff': 2.0})
+            >>> cfn.cli({'droid': droid, 'sim': sim})
         """
         overriden_cfg = self._copy()
         overriden_cfg._override_inplace(**overrides)
@@ -356,6 +377,14 @@ class Config:
     def instantiate(self) -> Any:
         """
         Instatiate the target function with the given arguments and keyword arguments.
+
+        Instantiation semantics: every referenced ``Config`` is instantiated
+        independently — there is no instance memoization or identity sharing. If the
+        same sub-config object is referenced from several slots, it is built once *per
+        slot*, yielding that many distinct instances. To share a single instance across
+        multiple slots, build it inside one config that returns the group as a bundle
+        (e.g. a dataclass or dict), and reference that bundle, rather than referencing
+        the same sub-config from each slot.
 
         Returns:
             The instantiated target function.

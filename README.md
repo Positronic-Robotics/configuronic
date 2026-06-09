@@ -132,6 +132,90 @@ fast_training = training_cfg.override(**{
 })
 ```
 
+### Variants via `.override()` (the core idiom)
+
+For real projects, the pattern you'll reach for most is **one general config plus
+named variants derived with `.override()`** — *not* a dict of unrelated config
+functions. Define the shared base once, then specialize it:
+
+```python
+# ONE general config — the factory and its shared defaults.
+single_arm = cfn.Config(build_embodiment, robot_arm=franka, gripper=robotiq, cameras={})
+
+# Named variants are just overrides of that base. Use dotted keys to reach
+# into sub-configs and list/dict slots.
+droid = single_arm.override(
+    robot_arm=franka_droid,
+    cameras={'wrist': wrist_cam, 'scene': scene_cam},
+)
+sim = single_arm.override(
+    robot_arm=franka_sim,
+    **{'robot_arm.collision_coeff': 2.0},   # nested, dotted override
+)
+
+# Expose the variants as CLI commands by passing a dict of overrides to cli().
+if __name__ == "__main__":
+    cfn.cli({'droid': droid, 'sim': sim})
+```
+
+```bash
+python embodiment.py droid --gripper="@my.grippers.Wsg"
+python embodiment.py sim --robot_arm.collision_coeff=4.0
+```
+
+**Anti-pattern — don't do this:** writing several near-duplicate `@cfn.config`
+functions that each rebuild the same object and differ only in a few arguments.
+
+```python
+# ❌ Duplicated construction logic, drifts out of sync, harder to override from CLI.
+@cfn.config(robot_arm=..., gripper=..., cameras={...})
+def droid(robot_arm, gripper, cameras):
+    return build_embodiment(robot_arm, gripper, cameras, simulated=False)
+
+@cfn.config(mujoco_model_path=...)
+def sim(mujoco_model_path, ...):
+    ...  # rebuild devices by hand
+    return build_embodiment(robot_arm, gripper, cameras, simulated=True)
+```
+
+When two configs share a factory and differ only in their arguments, prefer
+`base.override(...)` over a second `@cfn.config` function. Concrete (non-`Config`)
+override values pass straight through, and dotted keys let you tweak nested
+sub-configs without redefining the base.
+
+### Instantiation semantics (shared instances)
+
+Each referenced `Config` is instantiated **independently** — there is **no instance
+memoization or identity sharing**. If the same sub-config is referenced from several
+slots, it is built **once per slot**, producing that many distinct objects:
+
+```python
+mujoco = cfn.Config(MujocoSim, model_path="scene.xml")
+
+# ❌ Three references -> THREE separate MujocoSim instances, not one shared sim.
+embodiment = cfn.Config(
+    Embodiment,
+    robot_arm=cfn.Config(SimArm, sim=mujoco),
+    gripper=cfn.Config(SimGripper, sim=mujoco),
+    cameras={'wrist': cfn.Config(SimCamera, sim=mujoco)},
+)
+```
+
+To share a single instance across slots, build it inside one config that returns the
+group as a **bundle** (a dataclass, namedtuple, or dict), and reference that bundle:
+
+```python
+# ✅ Build the shared sim and all devices together; one MujocoSim is created.
+@cfn.config(model_path="scene.xml")
+def sim_devices(model_path: str):
+    sim = MujocoSim(model_path)
+    return {
+        'robot_arm': SimArm(sim),
+        'gripper': SimGripper(sim),
+        'cameras': {'wrist': SimCamera(sim)},
+    }
+```
+
 ## 🌍 Real-World Examples
 
 ### Robotics Hardware Configuration
@@ -457,6 +541,26 @@ python script.py sum --help
 # Shows detailed help for the sum command
 ```
 
+#### Default command (no subcommand name)
+
+An empty-string (`''`) key marks a **default command** — the one run when no command
+is named. This lets a tool expose named presets *and* a primary, flags-only path:
+
+```python
+cfn.cli({'': default_cfg, 'sim': sim_cfg})
+```
+
+```bash
+python script.py                       # -> default_cfg (no overrides)
+python script.py --embodiment=droid    # -> default_cfg with the override applied
+python script.py sim --x=1             # -> sim_cfg (named command, unchanged)
+python script.py --help                # -> lists commands and flags the default
+```
+
+A non-option word that isn't a known command still errors (so typos don't silently
+fall through to the default) — only no arguments or a leading `--option` dispatch to
+the default.
+
 ### Parameter Override Order ⚠️
 
 **Important:** Parameter overrides are executed in order of declaration. When overriding nested configurations, set the parent object first, then its properties:
@@ -501,7 +605,7 @@ def my_function(...):
 Generate automatic command-line interface for any configuration or multiple configurations.
 
 **Parameters:**
-- `config`: Either a single `Config` object or a dictionary mapping command names to `Config` objects
+- `config`: Either a single `Config` object or a (possibly nested) dict mapping command names to `Config`s. An empty-string (`''`) key marks the default command, run when no command is named.
 
 **Examples:**
 ```python
@@ -510,6 +614,9 @@ cfn.cli(my_config)
 
 # Multiple commands
 cfn.cli({'train': train_config, 'eval': eval_config, 'test': test_config})
+
+# With a default command (run when no subcommand is given)
+cfn.cli({'': train_config, 'eval': eval_config})
 ```
 
 #### `get_required_args(config: Config) -> List[str]`
@@ -626,25 +733,21 @@ experimental_training = base_training.override(
 debug_training = base_training.override(
     epochs=1, batch_size=2, **{"model.layers": 1})
 
-# Now you can easily switch between configurations
-# TODO: Make this part of Configuronic
+# Pass the variants to cli() as a dict to switch between them from the command line.
+# Make 'dev' the default command (run when no preset is named) via the '' key.
 if __name__ == "__main__":
-    import sys
-    configs = {
+    cfn.cli({
+        '': dev_training,            # default: `python train.py` runs dev
         'dev': dev_training,
         'prod': prod_training,
         'experimental': experimental_training,
-        'debug': debug_training
-    }
-
-    config_name = sys.argv[1] if len(sys.argv) > 1 else 'dev'
-    selected_config = configs.get(config_name, dev_training)
-
-    cfn.cli(selected_config)
+        'debug': debug_training,
+    })
 ```
 
 **Usage:**
 ```bash
+python train.py              # Use the default (dev) config
 python train.py dev          # Use development config
 python train.py prod         # Use production config
 python train.py experimental # Use experimental config

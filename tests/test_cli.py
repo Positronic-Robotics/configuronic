@@ -283,6 +283,115 @@ def test_cli_leaf_help_reflects_overrides(capfd):
         assert 'a: <REQUIRED>' not in out
 
 
+def test_cli_default_command_runs_with_no_args(capfd):
+    """An '' key is the default command, run when no command is named."""
+
+    @cfn.config(a=7)
+    def default_func(a):
+        print(f'default: {a}')
+
+    @cfn.config()
+    def sim(x):
+        print(f'sim: {x}')
+
+    with patch('sys.argv', ['script.py']):
+        cfn.cli({'': default_func, 'sim': sim})
+        out, err = capfd.readouterr()
+        assert out == 'default: 7\n'
+
+
+def test_cli_default_command_runs_with_leading_option(capfd):
+    """A leading option (no command word) dispatches to the default command and
+    passes the option as an override."""
+
+    @cfn.config(a=7)
+    def default_func(a):
+        print(f'default: {a}')
+
+    @cfn.config()
+    def sim(x):
+        print(f'sim: {x}')
+
+    with patch('sys.argv', ['script.py', '--a=42']):
+        cfn.cli({'': default_func, 'sim': sim})
+        out, err = capfd.readouterr()
+        assert out == 'default: 42\n'
+
+
+def test_cli_default_command_named_command_still_dispatches(capfd):
+    """A known command word is unaffected by the presence of a default command."""
+
+    @cfn.config(a=7)
+    def default_func(a):
+        print(f'default: {a}')
+
+    @cfn.config()
+    def sim(x):
+        print(f'sim: {x}')
+
+    with patch('sys.argv', ['script.py', 'sim', '--x=1']):
+        cfn.cli({'': default_func, 'sim': sim})
+        out, err = capfd.readouterr()
+        assert out == 'sim: 1\n'
+
+
+def test_cli_default_command_unknown_word_still_errors(capfd):
+    """A non-option word that isn't a known command errors even with a default
+    command present (no silent fall-through for typos)."""
+
+    @cfn.config(a=7)
+    def default_func(a):
+        print(f'default: {a}')
+
+    @cfn.config()
+    def sim(x):
+        print(f'sim: {x}')
+
+    with patch('sys.argv', ['script.py', 'simm']):
+        with pytest.raises(ValueError) as e:
+            cfn.cli({'': default_func, 'sim': sim})
+        assert "Command 'simm' not found" in str(e.value)
+
+
+def test_cli_default_command_help_lists_commands_and_flags_default(capfd):
+    """`--help` at a group with a default lists the children and flags the default."""
+
+    @cfn.config()
+    def default_func(a):
+        """Run the default path"""
+        print(f'default: {a}')
+
+    @cfn.config()
+    def sim(x):
+        """Run in simulation"""
+        print(f'sim: {x}')
+
+    with patch('sys.argv', ['script.py', '--help']):
+        cfn.cli({'': default_func, 'sim': sim})
+        out, err = capfd.readouterr()
+        assert 'default command' in out
+        assert 'Run the default path' in out
+        assert 'python script.py sim --x=<REQUIRED> # Run in simulation' in out
+
+
+def test_cli_default_command_in_nested_group(capfd):
+    """A default command works at an intermediate group node too."""
+
+    @cfn.config(a=1)
+    def default_func(a):
+        print(f'default: {a}')
+
+    @cfn.config()
+    def add(a, b):
+        print(a + b)
+
+    tree = {'math': {'': default_func, 'add': add}}
+    with patch('sys.argv', ['script.py', 'math', '--a=9']):
+        cfn.cli(tree)
+        out, err = capfd.readouterr()
+        assert out == 'default: 9\n'
+
+
 def test_cli_group_rejects_unknown_option(capfd):
     """An option-looking token before any leaf is selected is a typo, not a help request."""
 

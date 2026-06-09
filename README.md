@@ -163,11 +163,12 @@ python embodiment.py droid --gripper="@my.grippers.Wsg"
 python embodiment.py sim --robot_arm.collision_coeff=4.0
 ```
 
-**Anti-pattern — don't do this:** writing several near-duplicate `@cfn.config`
-functions that each rebuild the same object and differ only in a few arguments.
+**Less recommended:** writing several near-duplicate `@cfn.config` functions that
+each rebuild the same object and differ only in a few arguments.
 
 ```python
-# ❌ Duplicated construction logic, drifts out of sync, harder to override from CLI.
+# Works, but duplicates the construction logic, which can drift out of sync and is
+# harder to override from the CLI.
 @cfn.config(robot_arm=..., gripper=..., cameras={...})
 def droid(robot_arm, gripper, cameras):
     return build_embodiment(robot_arm, gripper, cameras, simulated=False)

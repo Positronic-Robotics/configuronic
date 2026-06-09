@@ -74,6 +74,10 @@ def _cli_single_command(config: Config):
 # (``-``-prefixed) or a Config leaf ends the walk.
 CommandTree = dict[str, 'Config | CommandTree']
 
+# An empty-string key in a group node marks the *default command*: the one run when
+# the group is reached without naming a child (no positional args, or a leading option).
+DEFAULT_COMMAND = ''
+
 
 def _walk_tree(tree: CommandTree, args: list[str]) -> tuple[Config | CommandTree, list[str], list[str]]:
     """Walk positional args down the command tree.
@@ -112,7 +116,14 @@ def _print_group_help(node: CommandTree, path: list[str]):
             command_description = ''
         required_args = get_required_args(child)
         required_args_str = ' '.join([f'--{arg}=<REQUIRED>' for arg in required_args])
-        print(f'python {sys.argv[0]} {prefix}{command} {required_args_str}{command_description}')
+        if command == DEFAULT_COMMAND:
+            # The default command is invoked without naming it (no positional args, or a
+            # leading option). Drop the empty name and flag it as the default.
+            invocation = ' '.join(filter(None, [f'python {sys.argv[0]}', prefix.strip(), required_args_str]))
+            doc = command_description.replace(' # ', ' ', 1) if command_description else ''
+            print(f'{invocation} # default command{doc}')
+        else:
+            print(f'python {sys.argv[0]} {prefix}{command} {required_args_str}{command_description}')
     print()
 
 
@@ -120,6 +131,22 @@ def _cli_command_tree(tree: CommandTree):
     args = sys.argv[1:]
     node, path, rest = _walk_tree(tree, args)
     if isinstance(node, dict):
+        default = node.get(DEFAULT_COMMAND)
+        if default is not None:
+            # A group with a default command. A bare ``--help`` lists the group's
+            # children (flagging the default). Otherwise run the default, passing the
+            # remaining tokens as overrides — including ``--x=v --help``, where we apply
+            # the overrides and show the default command's help, mirroring the leaf path.
+            # A non-option positional that isn't a known command already raised in
+            # ``_walk_tree``, so ``rest`` here is empty or starts with an option token.
+            overrides = [a for a in rest if a != '--help']
+            if '--help' in rest and not overrides:
+                _print_group_help(node, path)
+                return None
+            runner = _cli_single_command(default)
+            if '--help' in rest:
+                return fire.Fire(lambda **kwargs: runner(help=True, **kwargs), command=overrides)
+            return fire.Fire(runner, command=rest)
         # A group node (root or intermediate): list its children — but only for a bare
         # group or an exact ``--help`` request. Any other option-looking token (e.g.
         # ``--typo``), even when ``--help`` is also present, is a mistake rather than a
@@ -174,9 +201,30 @@ def cli(config: Config | CommandTree):
         >>> # Shell call: python script.py --help
         >>> # Shell call: python script.py sum --help
 
+        The more common real-world shape: the dict values are variants of one general
+        config, derived with ``.override()`` instead of duplicate config functions.
+
+        >>> single_arm = cfn.Config(build, robot_arm=franka, gripper=robotiq)
+        >>> cfn.cli({
+        ...     'droid': single_arm.override(robot_arm=franka_droid),
+        ...     'sim': single_arm.override(robot_arm=franka_sim),
+        ... })
+        >>> # Shell call: python script.py droid --gripper=@my.grippers.Wsg
+        >>> # Shell call: python script.py sim --robot_arm.collision_coeff=2.0
+
         >>> cfn.cli({'math': {'sum': sum, 'product': product}})
         >>> # Shell call: python script.py math sum --a 1 --b 2
         >>> # Shell call: python script.py math --help
+
+        An empty-string ('') key marks a *default command*, run when no command is
+        named — i.e. with no args or a leading option. A non-option word that isn't a
+        known command still errors, so typos don't silently fall through.
+
+        >>> cfn.cli({'': default_cfg, 'sim': sim_cfg})
+        >>> # Shell call: python script.py                  -> default_cfg (no overrides)
+        >>> # Shell call: python script.py --embodiment=droid -> default_cfg with override
+        >>> # Shell call: python script.py sim --x=1          -> sim_cfg
+        >>> # Shell call: python script.py --help             -> lists commands, flags the default
     """
 
     if isinstance(config, dict):

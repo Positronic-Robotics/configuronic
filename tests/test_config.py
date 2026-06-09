@@ -148,6 +148,31 @@ def test_override_nested_keeps_original_config():
     assert cfg.kwargs['env2'].kwargs['camera'].kwargs['name'] == 'Luxonis'
 
 
+def test_override_through_dict_keeps_original_config():
+    """Dotted override reaching through a dict must not mutate the base's dict."""
+    cfg = cfn.Config(
+        MultiEnv,
+        env1=cfn.Config(Env, camera={'left': cfn.Config(Camera, name='OpenCV')}),
+    )
+
+    variant = cfg.override(**{'env1.camera.left.name': 'New Camera'})
+
+    assert cfg.kwargs['env1'].kwargs['camera']['left'].kwargs['name'] == 'OpenCV'
+    assert variant.kwargs['env1'].kwargs['camera']['left'].kwargs['name'] == 'New Camera'
+    assert cfg.kwargs['env1'].kwargs['camera'] is not variant.kwargs['env1'].kwargs['camera']
+
+
+def test_override_through_list_keeps_original_config():
+    """Dotted override reaching through a list must not mutate the base's list."""
+    cfg = cfn.Config(Env, camera=[cfn.Config(Camera, name='OpenCV')])
+
+    variant = cfg.override(**{'camera.0.name': 'New Camera'})
+
+    assert cfg.kwargs['camera'][0].kwargs['name'] == 'OpenCV'
+    assert variant.kwargs['camera'][0].kwargs['name'] == 'New Camera'
+    assert cfg.kwargs['camera'] is not variant.kwargs['camera']
+
+
 def test_config_non_callable_target_raises_error():
     # TODO: Another posibility is to return the original object in this case
     non_callable = object()

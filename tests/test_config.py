@@ -173,6 +173,43 @@ def test_override_through_list_keeps_original_config():
     assert cfg.kwargs['camera'] is not variant.kwargs['camera']
 
 
+def test_override_config_value_with_dotted_key_keeps_shared_config():
+    """A Config passed as an override value must not be mutated by a dotted key in the same call.
+
+    Regression test for issue #31: ``codec=codec`` stores the shared reference and a
+    later ``codec.flip`` write would descend into it, mutating the shared instance.
+    """
+    codec = cfn.Config(Camera, name='OpenCV')
+    server = cfn.Config(Env, camera=cfn.Config(Camera, name='Default'))
+
+    variant = server.override(camera=codec, **{'camera.name': 'New Camera'})
+
+    assert variant.kwargs['camera'].kwargs['name'] == 'New Camera'
+    assert codec.kwargs['name'] == 'OpenCV', 'shared Config was mutated'
+    assert variant.kwargs['camera'] is not codec
+
+
+def test_init_config_value_with_dotted_key_keeps_shared_config():
+    """The decorator/__init__ path funnels through the same code path and must be safe too."""
+    codec = cfn.Config(Camera, name='OpenCV')
+
+    server = cfn.Config(Env, camera=codec, **{'camera.name': 'New Camera'})
+
+    assert server.kwargs['camera'].kwargs['name'] == 'New Camera'
+    assert codec.kwargs['name'] == 'OpenCV', 'shared Config was mutated during __init__'
+
+
+def test_override_container_value_with_dotted_key_keeps_shared_config():
+    """A container of Configs passed as an override value must be copied on store too."""
+    shared_camera = cfn.Config(Camera, name='OpenCV')
+    cfg = cfn.Config(Env, camera=[cfn.Config(Camera, name='Default')])
+
+    variant = cfg.override(camera=[shared_camera], **{'camera.0.name': 'New Camera'})
+
+    assert variant.kwargs['camera'][0].kwargs['name'] == 'New Camera'
+    assert shared_camera.kwargs['name'] == 'OpenCV', 'shared Config inside container was mutated'
+
+
 def test_config_non_callable_target_raises_error():
     # TODO: Another posibility is to return the original object in this case
     non_callable = object()

@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Overriding with a `Config` (or a container of `Config`s) as a value no longer lets a dotted key in the *same* call mutate the shared instance (#31). Previously `cfg.override(codec=shared_codec, **{'codec.flip': True})` (and the equivalent `Config.__init__` / decorator form) wrote `flip=True` onto `shared_codec` itself, silently changing every other config referencing it. `Config` and container override values are now copied on store, so dotted writes always land on a private copy.
+
 ## [0.5.0] - 2026-06-09
 
 ### Added

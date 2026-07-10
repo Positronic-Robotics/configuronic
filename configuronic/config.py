@@ -297,7 +297,10 @@ class Config:
         """
         assert callable(target), f'Target must be callable, got object of type {type(target)}.'
         self.target = target
-        self.args = [_resolve_value(arg) for arg in args]  # TODO: cover argument override with tests
+        # Copy Config/container args on store (mirroring _set_value) so a numeric dotted keyword
+        # override in the same call (e.g. Config(Env, shared, **{'0.name': ...})) lands on a private
+        # copy rather than mutating a shared positional value. See issue #31.
+        self.args = [_copy_value(_resolve_value(arg)) for arg in args]
         self.kwargs = {}
         self._override_inplace(**kwargs)
 

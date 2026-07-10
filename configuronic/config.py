@@ -229,12 +229,12 @@ def _set_value(obj, key, value):
     elif isinstance(obj, list):
         index = int(key)
         default = obj[index] if 0 <= index < len(obj) else None
-        obj[index] = _resolve_value(value, default)
+        obj[index] = _copy_value(_resolve_value(value, default))
     elif isinstance(obj, tuple):
         raise NotImplementedError('Overriding tuple values is not implemented')
     elif isinstance(obj, dict):
         default = obj.get(key) if isinstance(obj, dict) else None
-        obj[key] = _resolve_value(value, default)
+        obj[key] = _copy_value(_resolve_value(value, default))
     else:
         raise ConfigError(f'Cannot set value of {obj} with key {key}')
 
@@ -297,7 +297,10 @@ class Config:
         """
         assert callable(target), f'Target must be callable, got object of type {type(target)}.'
         self.target = target
-        self.args = [_resolve_value(arg) for arg in args]  # TODO: cover argument override with tests
+        # Copy Config/container args on store (mirroring _set_value) so a numeric dotted keyword
+        # override in the same call (e.g. Config(Env, shared, **{'0.name': ...})) lands on a private
+        # copy rather than mutating a shared positional value. See issue #31.
+        self.args = [_copy_value(_resolve_value(arg)) for arg in args]
         self.kwargs = {}
         self._override_inplace(**kwargs)
 
@@ -324,7 +327,11 @@ class Config:
 
         Note: overrides apply to an independent copy, so a variant never mutates the
         base — even for dotted overrides that reach through ``dict``/``list``/``tuple``
-        containers (e.g. ``"cameras.left.fps"``), which are copied too.
+        containers (e.g. ``"cameras.left.fps"``), which are copied too. This also holds
+        for ``Config`` (and container) values passed *as* overrides in the same call: a
+        dotted key that descends into such a value (e.g. ``robot_arm=franka_sim`` together
+        with ``"robot_arm.collision_coeff"``) lands on a private copy, never the shared
+        instance.
 
         Args:
             **overrides: Parameter paths and their new values.
@@ -374,7 +381,10 @@ class Config:
 
     def _set_value(self, key, value):
         default = self._get_value(key) if self._has_value(key) else None
-        value = _resolve_value(value, default, config=self)
+        # Copy Config/container values on store (mirroring _copy_value for the base) so that a
+        # dotted override descending into a value set in the same call lands on a private copy
+        # rather than mutating a shared instance. See issue #31.
+        value = _copy_value(_resolve_value(value, default, config=self))
 
         if key[0].isdigit():
             self.args[int(key)] = value

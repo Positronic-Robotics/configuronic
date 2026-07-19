@@ -35,6 +35,7 @@ dev = [
     "pytest-cov",
     "pytest-xdist",
     "ruff",
+    "pre-commit",
     "numpy",  # for examples
     "ipython",  # for tests
 ]

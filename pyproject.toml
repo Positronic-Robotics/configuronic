@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "configuronic"
-version = "0.5.1"
+version = "0.5.2"
 description = "Simple yet powerful \"Configuration as Code\" library"
 readme = "README.md"
 license = {file = "LICENSE.md"}
@@ -48,6 +48,9 @@ Issues = "https://github.com/Positronic-Robotics/configuronic/issues"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["configuronic*"]
+
+[tool.setuptools.package-data]
+configuronic = ["py.typed"]
 
 [tool.ruff]
 line-length = 120

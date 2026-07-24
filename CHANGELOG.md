@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.2] - 2026-07-24
+
+### Added
+- PEP 561 `py.typed` marker, declared as package-data so it ships in the sdist and wheel (#34). Downstream type-checkers now read configuronic's inline annotations instead of treating the package as untyped — e.g. `.override(...)` on a `@cfn.config`-decorated symbol resolves correctly rather than being flagged as an unknown member.
+
 ## [0.5.1] - 2026-07-08
 
 ### Fixed

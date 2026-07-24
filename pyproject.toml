@@ -49,6 +49,9 @@ Issues = "https://github.com/Positronic-Robotics/configuronic/issues"
 where = ["."]
 include = ["configuronic*"]
 
+[tool.setuptools.package-data]
+configuronic = ["py.typed"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"

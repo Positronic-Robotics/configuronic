@@ -631,7 +631,7 @@ def test_override_nested_error_preserves_original_cause():
     with pytest.raises(cfn.ConfigError) as exc_info:
         env_cfg.override(**{'camera.name.nonexistent': 'value'})
 
-    assert str(exc_info.value) == "Failed to override 'name' with value 'value'"
+    assert str(exc_info.value) == "Failed to override 'camera.name.nonexistent' with value 'value'"
     assert isinstance(exc_info.value.__cause__, cfn.ConfigError)
     assert 'Cannot set value' in str(exc_info.value.__cause__)
 
@@ -961,7 +961,7 @@ def test_override_existing_list_arg_reports_context_for_index_error():
     with pytest.raises(cfn.ConfigError) as exc_info:
         func.override(**{'a.4': 4})
 
-    assert str(exc_info.value) == "Failed to override 'a' with value '4'"
+    assert str(exc_info.value) == "Failed to override 'a.4' with value '4'"
     assert isinstance(exc_info.value.__cause__, IndexError)
     assert 'list assignment index out of range' in str(exc_info.value.__cause__)
 
@@ -974,7 +974,7 @@ def test_override_non_existing_list_arg_raises_config_error():
     with pytest.raises(cfn.ConfigError) as exc_info:
         func.override(**{'b.0': 4})
 
-    assert str(exc_info.value) == "Failed to override 'b' with value '4'"
+    assert str(exc_info.value) == "Failed to override 'b.0' with value '4'"
     assert isinstance(exc_info.value.__cause__, cfn.ConfigError)
     assert "Argument 'b' not found in config" in str(exc_info.value.__cause__)
 
@@ -1005,7 +1005,7 @@ def test_override_non_existing_nested_argument_raises_config_error():
     with pytest.raises(cfn.ConfigError) as exc_info:
         composite_obj.override(**{'arg.a.b': 4}).instantiate()
 
-    assert str(exc_info.value) == "Failed to override 'a' with value '4'"
+    assert str(exc_info.value) == "Failed to override 'arg.a.b' with value '4'"
     assert isinstance(exc_info.value.__cause__, cfn.ConfigError)
     assert "Argument 'arg.a' not found in config" in str(exc_info.value.__cause__)
 

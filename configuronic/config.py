@@ -18,6 +18,35 @@ class ConfigError(Exception):
     pass
 
 
+class ImportNotAllowedError(ConfigError):
+    """Raised when an override value uses import syntax where imports are not allowed.
+
+    Raised by :meth:`Config.override_data`, which applies overrides with values
+    interpreted strictly as data. The offending key and value are available as
+    attributes so a caller can report them back to whoever supplied the value.
+
+    Attributes:
+        key: Dotted path of the rejected override. Values nested inside a list or dict
+            carry their position, e.g. ``cameras[0]`` or ``codecs['left']``.
+        value: The rejected string value.
+    """
+
+    def __init__(self, key: str, value: str):
+        self.key = key
+        self.value = value
+        super().__init__(
+            f"Override '{key}' has value {value!r}, which configuronic would read as import syntax: a leading "
+            f"'{INSTANTIATE_PREFIX}' (absolute) or '{RELATIVE_PATH_PREFIX}' (relative to the current value) names a "
+            'Python object to import. This override accepts plain data only.'
+        )
+
+    def __reduce__(self):
+        # Exception.__reduce__ rebuilds from `args`, which holds only the formatted message,
+        # so the default would call __init__ with one argument. Servers pickle exceptions
+        # back from worker processes, so keep the two-argument form reconstructible.
+        return (self.__class__, (self.key, self.value))
+
+
 def _to_dict(obj):
     if isinstance(obj, Config):
         return obj._to_dict()
@@ -175,7 +204,13 @@ def _can_resolve_relative(default: Any | None) -> bool:
     return False
 
 
-def _resolve_value(value: Any, default: Any | None = None, config: Config | None = None) -> Any:
+def _resolve_value(
+    value: Any,
+    default: Any | None = None,
+    config: Config | None = None,
+    resolve_imports: bool = True,
+    key: str = '',
+) -> Any:
     """Resolve special strings to actual Python objects.
 
     Supports two prefixes:
@@ -189,23 +224,44 @@ def _resolve_value(value: Any, default: Any | None = None, config: Config | None
     For lists and dicts:
     - Both absolute (``@``) and relative (``.``) references are resolved recursively at all nesting levels
     - Nested collections inherit the same resolution context from their parent
+
+    When ``resolve_imports`` is False, every value that *would* have been resolved as an
+    import raises :class:`ImportNotAllowedError` instead — at any nesting depth. Values
+    that are not import references (including leading-dot strings with no base to resolve
+    against, such as ``./data``) are returned unchanged, exactly as they would be with
+    ``resolve_imports=True``. ``key`` is the location reported in that error; callers
+    prepend the override key they were given.
     """
     if isinstance(value, str):
         if value.startswith(INSTANTIATE_PREFIX):
-            if value[len(INSTANTIATE_PREFIX) :].startswith(INSTANTIATE_PREFIX):
+            if not resolve_imports:
+                # Refused *before* the '@@' escape is applied. An escaped value is stored as a
+                # literal '@...' string, and `_can_resolve_relative` accepts any such string as
+                # an import base — so a later trusted relative override on the same key would
+                # resolve against a path this caller chose. Storing one is planting an import.
+                raise ImportNotAllowedError(key, value)
+            elif value[len(INSTANTIATE_PREFIX) :].startswith(INSTANTIATE_PREFIX):
                 return value[len(INSTANTIATE_PREFIX) :]
             else:
                 return _import_object_from_path(value)
         # Only resolve relative imports when `default` provides a valid base.
         # Treat all other leading-dot strings as literals (e.g., '../data', '.env').
         elif value.startswith(RELATIVE_PATH_PREFIX) and _can_resolve_relative(default):
+            if not resolve_imports:
+                raise ImportNotAllowedError(key, value)
             return _resolve_relative_import(value, default)
         else:
             return value
     elif isinstance(value, list | tuple):
-        return type(value)(_resolve_value(item, default=config, config=config) for item in value)
+        return type(value)(
+            _resolve_value(item, default=config, config=config, resolve_imports=resolve_imports, key=f'{key}[{i}]')
+            for i, item in enumerate(value)
+        )
     elif isinstance(value, dict):
-        return {k: _resolve_value(v, default=config, config=config) for k, v in value.items()}
+        return {
+            k: _resolve_value(v, default=config, config=config, resolve_imports=resolve_imports, key=f'{key}[{k!r}]')
+            for k, v in value.items()
+        }
     else:
         return value
 
@@ -223,18 +279,18 @@ def _get_value(obj, key):
         raise ConfigError(f'Cannot get value of {obj} with key {key}')
 
 
-def _set_value(obj, key, value):
+def _set_value(obj, key, value, resolve_imports: bool = True):
     if isinstance(obj, Config):
-        obj._set_value(key, value)
+        obj._set_value(key, value, resolve_imports=resolve_imports)
     elif isinstance(obj, list):
         index = int(key)
         default = obj[index] if 0 <= index < len(obj) else None
-        obj[index] = _copy_value(_resolve_value(value, default))
+        obj[index] = _copy_value(_resolve_value(value, default, resolve_imports=resolve_imports))
     elif isinstance(obj, tuple):
         raise NotImplementedError('Overriding tuple values is not implemented')
     elif isinstance(obj, dict):
         default = obj.get(key) if isinstance(obj, dict) else None
-        obj[key] = _copy_value(_resolve_value(value, default))
+        obj[key] = _copy_value(_resolve_value(value, default, resolve_imports=resolve_imports))
     else:
         raise ConfigError(f'Cannot set value of {obj} with key {key}')
 
@@ -302,7 +358,7 @@ class Config:
         # copy rather than mutating a shared positional value. See issue #31.
         self.args = [_copy_value(_resolve_value(arg)) for arg in args]
         self.kwargs = {}
-        self._override_inplace(**kwargs)
+        self._override_inplace(kwargs)
 
         self._creator_module = _get_creator_module()
 
@@ -324,6 +380,11 @@ class Config:
           imports (``.SiblingObject``);
         - concrete (non-``Config``) values — ints, floats, objects, ``Config`` instances,
           lists, dicts — pass straight through and replace the previous value.
+
+        Because import strings are resolved, an override value is as trusted as your own
+        code: it can name any importable object. When the values come from outside the
+        process (a request, a URL, a user-supplied file), use :meth:`override_data`
+        instead, which refuses import strings rather than resolving them.
 
         Note: overrides apply to an independent copy, so a variant never mutates the
         base — even for dotted overrides that reach through ``dict``/``list``/``tuple``
@@ -354,7 +415,7 @@ class Config:
             >>> cfn.cli({'droid': droid, 'sim': sim})
         """
         overriden_cfg = self._copy()
-        overriden_cfg._override_inplace(**overrides)
+        overriden_cfg._override_inplace(overrides)
         # we want to keep creator module (module override was called from) for the overriden config
         # But we override it after the overrides are applied, so that lists and dicts arguments
         # are resolved relative to the original config, not the overriden config.
@@ -362,29 +423,89 @@ class Config:
 
         return overriden_cfg
 
-    def _override_inplace(self, **overrides):
+    def override_data(self, **overrides) -> Config:
+        """
+        Like :meth:`override`, but values are interpreted strictly as data.
+
+        Use this when the override *values* come from outside the process — a network
+        request, a URL query string, a user-supplied file. :meth:`override` treats a string
+        starting with ``@`` or ``.`` as an object to import, which is right for overrides
+        written by your own code but turns a config knob into arbitrary code execution when
+        the value comes from a caller you do not control. ``override_data`` refuses those
+        strings instead of resolving them, so an untrusted caller can tune arguments but
+        never swap components.
+
+        Both forms are refused, at any nesting depth (inside lists and dicts too):
+
+        - absolute — ``'@os.system'``;
+        - relative — ``'....os.system'``. The relative form is no safer than the absolute
+          one: leading dots walk *up* the module tree from the current value's module, and
+          enough of them leave the package entirely.
+
+        Strings starting with ``@`` are refused whole, including the ``'@@x'`` escape that
+        :meth:`override` reads as the literal ``'@x'``: a stored ``'@...'`` string is itself
+        a valid base for a later relative override, so accepting one would let this caller
+        choose the path a subsequent trusted override resolves against.
+
+        Everything else behaves exactly like :meth:`override` — same dotted keys, same
+        copy-on-write semantics, same treatment of values that are not import references
+        (a leading-dot string with no config to resolve against, e.g. ``'./data'``, stays a
+        literal string here just as it does there).
+
+        Note this constrains values, not the caller: passing a ``Config`` (or any other
+        Python object) as a value still works, since only your own code can do that. It is
+        strings — the only thing external data can carry — that never become imports.
+
+        Args:
+            **overrides: Parameter paths and their new values.
+
+        Returns:
+            Config: A new Config with overridden parameters.
+
+        Raises:
+            ImportNotAllowedError: If a value (or a value nested in a list/dict) is an
+                import reference. The offending key and value are on the exception, for
+                reporting back to whoever supplied them.
+            ConfigError: If a parameter path is invalid.
+
+        Example:
+            >>> params = {'codec.fps': 10}  # decoded from a request, a URL, a file
+            >>> cfg = policy.override_data(**params)  # raises on {'codec': '@os.system'}
+        """
+        overriden_cfg = self._copy()
+        overriden_cfg._override_inplace(overrides, resolve_imports=False)
+        overriden_cfg._creator_module = _get_creator_module()
+
+        return overriden_cfg
+
+    def _override_inplace(self, overrides: dict[str, Any], resolve_imports: bool = True):
         for key, value in overrides.items():
             try:
                 key_list = key.split('.')
 
                 current_obj = self
 
-                for i, key in enumerate(key_list[:-1]):
-                    current_obj = _get_value(current_obj, key)
+                for i, part in enumerate(key_list[:-1]):
+                    current_obj = _get_value(current_obj, part)
                     if current_obj is None:
                         path_to_not_found_arg = '.'.join(key_list[: i + 1])
                         raise ConfigError(f"Argument '{path_to_not_found_arg}' not found in config")
 
-                _set_value(current_obj, key_list[-1], value)
+                _set_value(current_obj, key_list[-1], value, resolve_imports=resolve_imports)
+            except ImportNotAllowedError as e:
+                # Re-raise (rather than wrap) so callers can tell "you tried to sneak in an import"
+                # apart from any other override failure. `e.key` holds the position inside the
+                # value (for containers); the override key it belongs to is only known here.
+                raise ImportNotAllowedError(f'{key}{e.key}', e.value) from None
             except Exception as e:
                 raise ConfigError(f"Failed to override '{key}' with value '{value}'") from e
 
-    def _set_value(self, key, value):
+    def _set_value(self, key, value, resolve_imports: bool = True):
         default = self._get_value(key) if self._has_value(key) else None
         # Copy Config/container values on store (mirroring _copy_value for the base) so that a
         # dotted override descending into a value set in the same call lands on a private copy
         # rather than mutating a shared instance. See issue #31.
-        value = _copy_value(_resolve_value(value, default, config=self))
+        value = _copy_value(_resolve_value(value, default, config=self, resolve_imports=resolve_imports))
 
         if key[0].isdigit():
             self.args[int(key)] = value

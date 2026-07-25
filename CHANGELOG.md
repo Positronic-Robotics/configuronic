@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0] - 2026-07-25
+
+### Added
+- `Config.override_data()`, for applying overrides whose values come from outside the process — a request, a URL, a user-supplied file (#36). Same dotted overrides as `override()`, but values are interpreted strictly as data: a string that `override()` would resolve as an import raises `ImportNotAllowedError` instead, at any nesting depth. This covers the relative (`.`) form as seriously as the absolute (`@`) one — leading dots walk *up* the module tree, and enough of them leave the package entirely. Values that are not import references pass through untouched.
+- `ImportNotAllowedError` (a `ConfigError`), carrying the offending `key` (the full dotted path, e.g. `cameras[0]`) and `value`, so a server can name the refused parameter back to the caller.
+
+### Fixed
+- Override failures now report the full dotted key. Previously `cfg.override(**{'arg.a.b': 4})` reported `Failed to override 'a'` — an intermediate segment — instead of `Failed to override 'arg.a.b'`.
+
 ## [0.5.2] - 2026-07-24
 
 ### Added

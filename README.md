@@ -438,6 +438,58 @@ To pass literal strings starting with `.` (like `'./data'` or `'.env'`), use ind
 python script.py --paths='["",""]' --paths.0='./data' --paths.1='.env'
 ```
 
+### Overrides From an Untrusted Source
+
+`override()` resolves import strings, so an override value is as trusted as your own code:
+`--model="@my_models.Custom"` is a feature on your CLI, but `codec="@os.system"` coming off
+the network is arbitrary code execution. When the *values* come from outside the process —
+a request, a URL, a user-supplied file — use **`override_data()`** instead. It applies the
+same dotted overrides with values interpreted strictly as data: import strings are refused,
+not resolved.
+
+```python
+# params decoded from a request, a URL, a user-supplied file
+session_cfg = policy_cfg.override_data(**params)   # tunes arguments, cannot swap components
+
+policy_cfg.override_data(codec='@os.system')       # ImportNotAllowedError
+policy_cfg.override_data(codec='....os.system')    # ImportNotAllowedError
+```
+
+Both forms are refused, at any nesting depth (inside lists and dicts too). The relative
+form matters as much as the absolute one: leading dots walk *up* the module tree from the
+current value's module, and enough of them leave the package entirely — the dot count is
+just the depth of that module, which is not a secret.
+
+`ImportNotAllowedError` (a `ConfigError`) carries the offending `key` and `value`, so a
+server can tell the caller exactly which parameter was refused:
+
+```python
+try:
+    session_cfg = policy_cfg.override_data(**params)
+except cfn.ImportNotAllowedError as e:
+    raise BadRequest(f'parameter {e.key!r}: {e.value!r} is not a plain value')
+```
+
+Strings starting with `@` are refused whole, including `override()`'s `'@@x'` escape for a
+literal `'@x'`: a stored `'@...'` string is itself a valid base for a later relative
+override, so accepting one would let the caller choose the path a subsequent trusted
+override resolves against.
+
+Everything else behaves exactly like `override()` — same dotted keys, same copy-on-write
+semantics, and values that aren't import references are untouched: `'./data'` stays a
+literal string wherever it would be one for `override()`. Inside a list or dict, that means
+nowhere — every leading-dot string in a container resolves against the config (a documented
+0.3.0 rule that `override_data` inherits rather than diverges from), so pass such values
+with indexed keys, exactly as you would to `override()`:
+
+```python
+policy_cfg.override_data(paths=['./data'])          # ImportNotAllowedError
+policy_cfg.override_data(**{'paths.0': './data'})   # fine
+```
+
+The restriction is on strings, the only thing external data can carry; your own code can
+still pass a `Config` as a value.
+
 ### Configuration Inheritance
 
 ```python
@@ -572,6 +624,7 @@ Main configuration class that stores a callable and its arguments.
 
 **Methods:**
 - `override(**kwargs) -> Config`: Create new config with updated parameters
+- `override_data(**kwargs) -> Config`: Same, but values are interpreted strictly as data — import strings (`@…`, `.…`) raise `ImportNotAllowedError` instead of being resolved. Use it when the values come from outside the process.
 - `instantiate() -> Any`: Execute the configuration and return result
 - `copy() -> Config`: Deep copy the configuration
 - `__call__(**kwargs) -> Any`: `override` config with `**kwargs` and `instantiate` it. **Note:** only keyword specified arguments are supported.
@@ -609,6 +662,11 @@ cfn.cli({'': train_config, 'eval': eval_config})
 
 #### `get_required_args(config: Config) -> List[str]`
 Get list of required arguments for a configuration.
+
+### Exceptions
+
+- `ConfigError` - Raised when an override path is invalid or a config cannot be built
+- `ImportNotAllowedError` - Subclass of `ConfigError`, raised by `override_data` when a value uses import syntax. Carries the offending `key` and `value`
 
 ### Special Syntax
 

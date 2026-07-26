@@ -79,6 +79,11 @@ class ClassBodyAlias:
         """A bound method target — the alias is in this class body too."""
         return pipeline
 
+    @staticmethod
+    def make(pipeline: Alias):
+        """A static method target: a plain function, reached through the class."""
+        return pipeline
+
 
 class InheritsClassBodyAlias(ClassBodyAlias):
     """Inherits the annotated `__init__`; the alias is in the base's body, not this one."""

@@ -372,6 +372,29 @@ def _defining_class(cls: type, method: str) -> type | None:
     return None
 
 
+def _owning_class(func: Any) -> type | None:
+    """The class body `func` was written in, for a function that carries no binding.
+
+    A bound method names what it is bound to, but a static method — or any function
+    reached through the class that defines it — is a plain function, and only its
+    qualified name says where it was written.
+    """
+    qualname = getattr(func, '__qualname__', '')
+    globalns = getattr(func, '__globals__', None)
+    if globalns is None or '.' not in qualname:
+        return None
+
+    owner: Any = globalns
+    for part in qualname.split('.')[:-1]:
+        if part == '<locals>':
+            return None  # defined inside a function: that scope is gone, nothing to recover
+        try:
+            owner = owner[part] if owner is globalns else getattr(owner, part)
+        except (KeyError, AttributeError):
+            return None
+    return owner if inspect.isclass(owner) else None
+
+
 def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     """Where a stringified annotation of `target` may have been written.
 
@@ -395,11 +418,13 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
             (func.__init__, _defining_class(func, '__init__')),
         ]
     else:
-        # A bound method was written in a class body too — the one that defines it, found
-        # from the instance or class it is bound to.
+        # A method was written in a class body too. A bound one names what it is bound to;
+        # a static method (or any function reached through its class) has only its
+        # qualified name to say where it came from.
         bound_to = getattr(func, '__self__', None)
         owner = bound_to if inspect.isclass(bound_to) else type(bound_to) if bound_to is not None else None
         written_in = _defining_class(owner, getattr(func, '__name__', '')) if owner is not None else None
+        written_in = written_in if written_in is not None else _owning_class(func)
         candidates = [(type(func).__call__, _defining_class(type(func), '__call__')), (func, written_in)]
 
     sources: list[_AnnotationSource] = []
@@ -591,7 +616,10 @@ class _TargetKey:
 
 # Reading the declaration means inspecting a signature and resolving annotations, which is
 # an order of magnitude more expensive than instantiating a small config. It depends on the
-# target alone, so cache it rather than paying it on every instantiate().
+# target alone, so cache it rather than paying it on every instantiate(). A target's
+# signature is read once and taken as settled: rewriting a live function's __annotations__
+# after a config has instantiated it is not observed, and checking for that would mean
+# re-reading the signature every time, which is the cost the cache exists to avoid.
 @functools.lru_cache(maxsize=1024)
 def _lazy_declaration(key: _TargetKey) -> _LazyDeclaration:
     return _read_lazy_declaration(key.target)

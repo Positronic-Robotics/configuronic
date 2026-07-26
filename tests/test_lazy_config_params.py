@@ -243,6 +243,14 @@ def test_postponed_annotation_using_an_inherited_class_body_alias():
     assert isinstance(cfg.instantiate().pipeline, cfn.Config)
 
 
+def test_static_method_target_resolves_a_class_body_alias():
+    # A static method is a plain function with no binding, so only its qualified name says
+    # which class body it was written in.
+    cfg = cfn.Config(lazy_annotations.ClassBodyAlias.make, pipeline=cfn.Config(lazy_annotations.Pipeline))
+
+    assert isinstance(cfg.instantiate(), cfn.Config)
+
+
 def test_bound_method_target_resolves_a_class_body_alias():
     holder = lazy_annotations.ClassBodyAlias(pipeline=None)
 

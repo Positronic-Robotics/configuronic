@@ -10,6 +10,8 @@ from typing import Any
 
 import yaml
 
+from . import _annotations
+
 INSTANTIATE_PREFIX = '@'
 RELATIVE_PATH_PREFIX = '.'
 
@@ -362,7 +364,7 @@ class Config:
 
         self._creator_module = _get_creator_module()
 
-    def override(self, **overrides) -> Config:
+    def override(self, /, **overrides) -> Config:
         """
         Create a new Config with updated parameters.
 
@@ -423,7 +425,7 @@ class Config:
 
         return overriden_cfg
 
-    def override_data(self, **overrides) -> Config:
+    def override_data(self, /, **overrides) -> Config:
         """
         Like :meth:`override`, but values are interpreted strictly as data.
 
@@ -535,6 +537,20 @@ class Config:
         the dependents from it, rather than pointing several slots at the same
         sub-config.
 
+        A target can opt out of resolution for a particular argument by annotating that
+        parameter :class:`Config`: it then receives the stored config itself, not what it
+        builds. That is for targets that need to build it later, more than once, or with
+        overrides they only learn at runtime — a server applying per-request overrides,
+        for instance. Everything else about the argument is unchanged: it is an ordinary
+        config, so ``.override()`` (including dotted keys reaching into it) and ``--help``
+        keep working.
+
+        Such an argument is the one thing here that is *not* built afresh: the target is
+        handed the config held in that slot, the same object on every call, so treat it as
+        read-only and derive from it with ``.override()`` / ``.override_data()``, which
+        copy. That is deliberate — the config is what the target asked for, and copying it
+        on the way past would only be undone by the first override the target applies.
+
         Returns:
             The instantiated target function.
 
@@ -572,11 +588,24 @@ class Config:
                 else:
                     raise ConfigError(f'Error instantiating "{path}{key}": {e}') from e
 
+        # A parameter annotated `Config` declares that the target wants the config object
+        # itself rather than what it builds — because it instantiates it later, more than
+        # once, or with overrides it only learns at runtime. Whether a target wants a config
+        # or an object is a property of the target, so the declaration lives in its
+        # signature: callers keep writing ordinary values and ordinary overrides.
+        wants_config = _config_parameters(self.target)
+
         # Recursively instantiate any Config objects in args
-        instantiated_args = [_instantiate_value(arg, key, path) for key, arg in enumerate(self.args)]
+        instantiated_args = [
+            arg if wants_config.positional(index) else _instantiate_value(arg, index, path)
+            for index, arg in enumerate(self.args)
+        ]
 
         # Recursively instantiate any Config objects in kwargs
-        instantiated_kwargs = {key: _instantiate_value(value, key, path) for key, value in self.kwargs.items()}
+        instantiated_kwargs = {
+            key: value if wants_config.keyword(key) else _instantiate_value(value, key, path)
+            for key, value in self.kwargs.items()
+        }
 
         return self.target(*instantiated_args, **instantiated_kwargs)
 
@@ -619,7 +648,7 @@ class Config:
         cfg._creator_module = self._creator_module
         return cfg
 
-    def __call__(self, **kwargs):
+    def __call__(self, /, **kwargs):
         """
         Override the config with the given kwargs and instantiate the config.
 
@@ -643,6 +672,12 @@ class Config:
             >>> # Shell call: python script.py option2 --a 5
         """
         return self.override(**kwargs).instantiate()
+
+
+# Which of a target's parameters ask for the config itself rather than what it builds, read
+# from the target's signature. `Config` is handed over rather than imported there, so that
+# reading signatures stays a job with nothing to say about what a config means.
+_config_parameters = _annotations.declarations_for(Config)
 
 
 def config(**kwargs) -> Callable[[Callable], Config]:

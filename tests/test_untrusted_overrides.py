@@ -246,6 +246,16 @@ def test_override_data_rejection_leaves_base_config_untouched():
     assert instance.camera.name == 'default'
 
 
+def test_override_data_accepts_a_key_named_self():
+    # An untrusted caller supplies the keys, and 'self' used to collide with the bound
+    # method's own parameter — a TypeError escaping the ConfigError the caller catches.
+    # It is an ordinary override key like any other.
+    env = _env_config().override_data(**{'self': 1})
+
+    assert env.kwargs['self'] == 1
+    assert _env_config().override(**{'self': 1}).kwargs['self'] == 1
+
+
 def test_override_data_still_reports_unknown_keys():
     with pytest.raises(cfn.ConfigError) as exc_info:
         _env_config().override_data(**{'nonexistent.fps': 10})

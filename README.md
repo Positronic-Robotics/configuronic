@@ -204,6 +204,60 @@ def app(db):
     return App(reader=Reader(db), writer=Writer(db))
 ```
 
+### Receiving a config instead of an object
+
+Resolving every argument before calling the target is the right default, but some targets
+need the **config itself** — because they build it later, more than once, or with overrides
+they only learn at runtime. A parameter annotated `cfn.Config` declares exactly that: it
+receives the config stored in that slot, unresolved.
+
+```python
+# One pipeline config, plus named variants of it.
+pipeline = cfn.Config(Pipeline, codec=h264, model_path='base')
+droid = pipeline.override(codec=hevc, model_path='GEAR-Dreams/DreamZero-DROID')
+
+@cfn.config(pipeline=pipeline, host='0.0.0.0', port=8000)
+def serve(pipeline: cfn.Config, host: str, port: int):
+    # `pipeline` is a Config, so the server can rebuild it per connection with the
+    # overrides that connection asks for. An instantiated pipeline is frozen — there
+    # would be nothing left to tune.
+    PolicyServer(pipeline, host=host, port=port).serve()
+
+cfn.cli({'': serve, 'droid': serve.override(pipeline=droid)})
+```
+
+```python
+class PolicyServer:
+    def on_connection(self, params: dict):  # params decoded from the request
+        return self._pipeline_cfg.override_data(**params).instantiate()
+```
+
+The declaration lives in the **signature**, not at the call site: whether a target wants a
+config or a built object is a property of the target, not of each call. Callers keep passing
+ordinary values and writing ordinary overrides, so nothing else changes — from Python or
+from the command line:
+
+```bash
+python serve.py droid --pipeline.codec.fps=10          # dotted override reaches into it
+python serve.py droid --pipeline=@my.pipelines.custom  # swaps the whole config
+python serve.py droid --help                           # shows what is inside the pipeline
+```
+
+`get_required_args` (and so `--help`) still reports required arguments nested inside such a
+parameter: the config must be fully specified before whoever holds it instantiates it.
+
+A few details:
+
+- `cfn.Config | None` (and `Optional[cfn.Config]`) work too, so the parameter can default to
+  `None`. `Annotated[cfn.Config, ...]` is recognised as well, as are string annotations
+  (`from __future__ import annotations`).
+- The annotation turns resolution *off* for that argument; it does not demand a `Config`. A
+  value that is not a config is passed through untouched.
+- Only a whole argument can be handed over. A `list[cfn.Config]` annotation is not special —
+  configs inside containers are still built.
+- The target receives the config stored in the slot, not a copy. Derive from it with
+  `.override()` / `.override_data()`, which copy, rather than mutating it in place.
+
 ## 🌍 Real-World Examples
 
 ### Robotics Hardware Configuration
@@ -628,6 +682,8 @@ Main configuration class that stores a callable and its arguments.
 - `instantiate() -> Any`: Execute the configuration and return result
 - `copy() -> Config`: Deep copy the configuration
 - `__call__(**kwargs) -> Any`: `override` config with `**kwargs` and `instantiate` it. **Note:** only keyword specified arguments are supported.
+
+**Target annotations:** a target parameter annotated `cfn.Config` (or `cfn.Config | None`) receives the stored config unresolved instead of what it builds — see [Receiving a config instead of an object](#receiving-a-config-instead-of-an-object).
 
 #### `@config` Decorator
 ```python

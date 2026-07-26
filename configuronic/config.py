@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import functools
 import importlib
 import inspect
 import posixpath
 from collections import deque
 from collections.abc import Callable
-from types import ModuleType
-from typing import Any
+from types import ModuleType, UnionType
+from typing import Any, ForwardRef, NamedTuple, Union, get_args, get_origin
 
 import yaml
 
@@ -311,6 +312,101 @@ def _get_creator_module() -> ModuleType | None:
     return module
 
 
+def _annotation_namespace(target: Any) -> dict[str, Any]:
+    """Namespace a stringified annotation of `target` should be evaluated in."""
+    func = getattr(target, '__init__', target) if inspect.isclass(target) else target
+    namespace = getattr(func, '__globals__', None)
+    if namespace is None:
+        namespace = getattr(inspect.getmodule(target), '__dict__', None)
+    return namespace or {}
+
+
+def _is_config_annotation(annotation: Any, target: Any) -> bool:
+    """Does this parameter annotation ask for the `Config` itself?
+
+    True for a bare :class:`Config` and for a union that contains it (``Config | None``),
+    in either case optionally wrapped in ``Annotated``. Containers of configs
+    (``list[Config]``) are deliberately excluded: only a whole argument can be handed
+    over unresolved, not selected items inside one.
+    """
+    if annotation is inspect.Parameter.empty:
+        return False
+
+    if isinstance(annotation, ForwardRef):
+        annotation = annotation.__forward_arg__
+
+    if isinstance(annotation, str):
+        # Under `from __future__ import annotations` (or when the annotation is quoted) we
+        # get source text such as 'cfn.Config'. Evaluate it in the target's own namespace —
+        # what `typing.get_type_hints` does, but one parameter at a time, so an unresolvable
+        # forward reference on an unrelated parameter cannot hide a perfectly good annotation
+        # here. The name check keeps unrelated annotations from being evaluated (and their
+        # modules imported) on every instantiate().
+        if Config.__name__ not in annotation:
+            return False
+        try:
+            annotation = eval(annotation, _annotation_namespace(target))
+        except Exception:
+            return False
+
+    if hasattr(annotation, '__metadata__'):  # Annotated[Config, ...]
+        return _is_config_annotation(annotation.__origin__, target)
+
+    if annotation is Config:
+        return True
+
+    origin = get_origin(annotation)
+    if origin is Union or origin is UnionType:
+        return any(_is_config_annotation(arg, target) for arg in get_args(annotation))
+
+    return False
+
+
+class _LazyDeclaration(NamedTuple):
+    """Which of a target's parameters ask for the `Config` itself, by position and by name.
+
+    ``positional``/``keywords`` cover the named parameters; ``var_positional``/``var_keyword``
+    apply to anything beyond them, i.e. what ``*args`` / ``**kwargs`` would collect.
+    """
+
+    positional: tuple[bool, ...]
+    keywords: dict[str, bool]
+    var_positional: bool
+    var_keyword: bool
+
+
+def _read_lazy_declaration(target: Any) -> _LazyDeclaration:
+    """Read `target`'s signature and mark the parameters annotated `Config`."""
+    try:
+        parameters = inspect.signature(target).parameters
+    except (TypeError, ValueError):
+        # Builtins and other C callables often have no introspectable signature. Then
+        # nothing is annotated, so nothing is lazy.
+        return _LazyDeclaration((), {}, False, False)
+
+    positional: list[bool] = []
+    keywords: dict[str, bool] = {}
+    var_positional = var_keyword = False
+    for name, param in parameters.items():
+        is_lazy = _is_config_annotation(param.annotation, target)
+        if param.kind is inspect.Parameter.VAR_POSITIONAL:
+            var_positional = is_lazy
+        elif param.kind is inspect.Parameter.VAR_KEYWORD:
+            var_keyword = is_lazy
+        else:
+            if param.kind is not inspect.Parameter.KEYWORD_ONLY:
+                positional.append(is_lazy)
+            if param.kind is not inspect.Parameter.POSITIONAL_ONLY:
+                keywords[name] = is_lazy
+    return _LazyDeclaration(tuple(positional), keywords, var_positional, var_keyword)
+
+
+# Reading the declaration means inspecting a signature and resolving annotations, which is
+# an order of magnitude more expensive than instantiating a small config. It depends on the
+# target alone, so cache it rather than paying it on every instantiate().
+_lazy_declaration = functools.lru_cache(maxsize=1024)(_read_lazy_declaration)
+
+
 class Config:
     def __init__(self, target, *args, **kwargs):
         """
@@ -524,6 +620,33 @@ class Config:
         else:
             return key in self.kwargs
 
+    def _lazy_slots(self) -> tuple[set[int], set[str]]:
+        """Argument slots the target wants handed over unresolved.
+
+        A parameter annotated :class:`Config` (or ``Config | None``) declares that the
+        target wants the config object itself rather than what it builds — because it
+        instantiates it later, more than once, or with overrides it only learns at runtime.
+        Returns the positional indices and keyword names whose stored values
+        :meth:`_instantiate_internal` must pass through as they are.
+
+        Whether a target wants a config or an object is a property of the target, so the
+        declaration lives in its signature: callers keep writing ordinary values and
+        ordinary overrides.
+        """
+        try:
+            declaration = _lazy_declaration(self.target)
+        except TypeError:
+            # An unhashable callable (a target instance whose class sets __hash__ = None)
+            # cannot be a cache key. Read its declaration directly.
+            declaration = _read_lazy_declaration(self.target)
+
+        positional = declaration.positional
+        lazy_args = {
+            i for i in range(len(self.args)) if (positional[i] if i < len(positional) else declaration.var_positional)
+        }
+        lazy_kwargs = {key for key in self.kwargs if declaration.keywords.get(key, declaration.var_keyword)}
+        return lazy_args, lazy_kwargs
+
     def instantiate(self) -> Any:
         """
         Instatiate the target function with the given arguments and keyword arguments.
@@ -534,6 +657,14 @@ class Config:
         one object, bind them together: take that object as a single argument and build
         the dependents from it, rather than pointing several slots at the same
         sub-config.
+
+        A target can opt out of resolution for a particular argument by annotating that
+        parameter :class:`Config`: it then receives the stored config itself, not what it
+        builds. That is for targets that need to build it later, more than once, or with
+        overrides they only learn at runtime — a server applying per-request overrides,
+        for instance. Everything else about the argument is unchanged: it is an ordinary
+        config, so ``.override()`` (including dotted keys reaching into it) and ``--help``
+        keep working.
 
         Returns:
             The instantiated target function.
@@ -572,11 +703,19 @@ class Config:
                 else:
                     raise ConfigError(f'Error instantiating "{path}{key}": {e}') from e
 
+        # Slots the target asked for unresolved, by annotating the parameter `Config`.
+        lazy_args, lazy_kwargs = self._lazy_slots()
+
         # Recursively instantiate any Config objects in args
-        instantiated_args = [_instantiate_value(arg, key, path) for key, arg in enumerate(self.args)]
+        instantiated_args = [
+            arg if key in lazy_args else _instantiate_value(arg, key, path) for key, arg in enumerate(self.args)
+        ]
 
         # Recursively instantiate any Config objects in kwargs
-        instantiated_kwargs = {key: _instantiate_value(value, key, path) for key, value in self.kwargs.items()}
+        instantiated_kwargs = {
+            key: value if key in lazy_kwargs else _instantiate_value(value, key, path)
+            for key, value in self.kwargs.items()
+        }
 
         return self.target(*instantiated_args, **instantiated_kwargs)
 

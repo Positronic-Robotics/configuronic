@@ -735,6 +735,14 @@ def test_declared_signature_wins_over_the_wrapped_function():
     assert isinstance(cfn.Config(target, pipeline=pipeline_cfg).instantiate(), cfn.Config)
 
 
+def test_class_declaring_its_own_signature_resolves_its_class_body_alias():
+    # The class inherits its constructor, so the parameters come from the signature it
+    # declares — a statement in its own body, which is what binds the alias they name.
+    cfg = cfn.Config(lazy_declared_signature.DeclaresItsOwnSignature, pipeline=pipeline_cfg)
+
+    assert isinstance(cfg.instantiate().pipeline, cfn.Config)
+
+
 def test_circular_wrapper_chain_does_not_spin():
     def target(pipeline: 'cfn.Config'):
         return pipeline

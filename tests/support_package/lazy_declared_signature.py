@@ -1,17 +1,19 @@
-"""A wrapper that declares its own `__signature__`.
+"""Targets that declare their own `__signature__`.
 
 `inspect.signature` stops unwrapping at a `__signature__` and reports the parameters
-declared here, so their annotations belong to *this* module — the wrapped function's
-module knows nothing about the name `C`.
+declared there, so their annotations belong where the declaration was written — this
+module for the wrapper below, and the class body for the class further down.
 """
 
 import functools
 import inspect
 
-from configuronic import Config as C  # noqa: F401 - named by the annotation string below
+from configuronic import Config as C
 
 
 def with_declared_signature(func):
+    """The wrapped function's module knows nothing about the name `C`."""
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -20,3 +22,24 @@ def with_declared_signature(func):
         inspect.Parameter('pipeline', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation='C')
     ])
     return wrapper
+
+
+class TakesAPipeline:
+    """Provides the constructor, and annotates nothing."""
+
+    def __init__(self, pipeline):
+        self.pipeline = pipeline
+
+
+class DeclaresItsOwnSignature(TakesAPipeline):
+    """Inherits that constructor, so only the signature declared here has the parameters.
+
+    `Alias` is bound in this class body — the same body the declaration is written in, and
+    the only scope in which its annotation means anything.
+    """
+
+    Alias = C
+
+    __signature__ = inspect.Signature([
+        inspect.Parameter('pipeline', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation='Alias')
+    ])

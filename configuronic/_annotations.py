@@ -154,10 +154,11 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
 
     An annotation has to be resolved where it was written, so follow the target to the
     callable that declares the parameters. For a class, the reported parameters come from
-    a metaclass ``__call__``, from ``__new__`` or from ``__init__``, by rules that depend
-    on which of them the class defines itself — so offer all three, most specific first,
-    along with what each declares, and let :func:`_sources_for` pick. Each can be
-    decorated in turn, so each is followed the same way. For a callable object the
+    a declared ``__signature__``, from a metaclass ``__call__``, from ``__new__`` or from
+    ``__init__``, by rules that depend on which of them the class defines itself — so
+    offer them all, most specific first, along with what each declares, and let
+    :func:`_sources_for` pick. Each can be decorated in turn, so each is followed the same
+    way. For a callable object the
     parameters come from its class' ``__call__``, which may be inherited from a base in
     another module; the object itself keeps no globals and falls back to the module its
     own class came from.
@@ -172,6 +173,11 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
             (func.__new__, _defining_class(func, '__new__')),
             (func.__init__, _defining_class(func, '__init__')),
         ]
+        if hasattr(func, '__signature__'):
+            # A declared signature outranks all three: it is what `inspect.signature`
+            # reports, and being a statement in a class body, the body that binds
+            # `__signature__` is also the scope its annotations were written against.
+            candidates.insert(0, (func, _defining_class(func, '__signature__')))
     else:
         # A method was written in a class body too. A bound one names what it is bound to;
         # a static method (or any function reached through its class) has only its

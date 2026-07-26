@@ -225,6 +225,17 @@ def test_cyclic_alias_spelling_is_not_lazy():
     assert isinstance(cfg.instantiate(), lazy_annotations.Pipeline)
 
 
+def test_annotation_is_not_resolved_in_a_sibling_namespace():
+    # `pipeline` is written in the metaclass' module and cannot be resolved there. The
+    # class' own module binds that name to `Config`, but it did not write the parameter,
+    # so it does not get to answer for it: the annotation is simply unresolved.
+    cfg = cfn.Config(lazy_annotations.BuiltByBrokenMeta, pipeline=pipeline_cfg)
+
+    received, _ = cfg.instantiate()
+
+    assert isinstance(received, Pipeline)
+
+
 def test_postponed_optional_annotation():
     cfg = cfn.Config(lazy_annotations.optional_spelling, pipeline=cfn.Config(lazy_annotations.Pipeline))
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import configuronic as cfn
 from configuronic import Config
 from configuronic import Config as C
-from tests.support_package import lazy_wrappers
+from tests.support_package import lazy_broken_metaclass, lazy_wrappers
 
 
 class Pipeline:
@@ -99,3 +99,10 @@ class Building(type):
 
 class Built(metaclass=Building):
     """A class whose signature comes from its metaclass' `__call__`."""
+
+
+class BuiltByBrokenMeta(metaclass=lazy_broken_metaclass.BrokenAnnotationMeta):
+    """`C` means `Config` here, but `pipeline` was written in the metaclass' module."""
+
+    def __init__(self, other: C):
+        self.other = other

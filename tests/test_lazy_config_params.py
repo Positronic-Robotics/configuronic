@@ -236,6 +236,16 @@ def test_postponed_annotation_using_a_class_body_alias():
     assert isinstance(server.pipeline, cfn.Config)
 
 
+def test_postponed_annotation_using_a_private_class_body_alias():
+    # A private name is mangled where it is written, so the class body holds
+    # `_PrivateClassBodyAlias__Alias` while the postponed annotation still reads
+    # `__Alias`. Without postponed evaluation the same source resolves.
+    target = lazy_annotations.PrivateClassBodyAlias
+    server = cfn.Config(target, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
+
+    assert isinstance(server.pipeline, cfn.Config)
+
+
 def test_postponed_annotation_using_an_inherited_class_body_alias():
     # The `__init__` is inherited, so the body that binds the alias is the base's.
     cfg = cfn.Config(lazy_annotations.InheritsClassBodyAlias, pipeline=cfn.Config(lazy_annotations.Pipeline))

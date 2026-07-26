@@ -87,6 +87,16 @@ class ClassBodyAlias:
         return pipeline
 
 
+class PrivateClassBodyAlias:
+    """The alias is private, so the class body holds it under a name nothing else uses."""
+
+    __Alias = cfn.Config
+
+    def __init__(self, pipeline: __Alias, host: str = 'localhost'):
+        self.pipeline = pipeline
+        self.host = host
+
+
 class InheritsClassBodyAlias(ClassBodyAlias):
     """Inherits the annotated `__init__`; the alias is in the base's body, not this one."""
 

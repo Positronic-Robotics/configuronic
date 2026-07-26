@@ -126,6 +126,27 @@ def _defining_class(cls: type, method: str) -> type | None:
     return None
 
 
+def _class_namespace(cls: type) -> Mapping[str, Any]:
+    """The body of `cls` as a scope, under the spellings an annotation there would use.
+
+    A name beginning with two underscores is mangled where it is written — ``__Alias`` in
+    the body of ``Factory`` is stored as ``_Factory__Alias`` — while a postponed
+    annotation keeps the source text, so resolving it needs the name as written. Mangling
+    is by the class the body belongs to, with the leading underscores of its own name
+    dropped, and a class named only of underscores mangles nothing.
+    """
+    stripped = cls.__name__.lstrip('_')
+    if not stripped:
+        return vars(cls)
+
+    namespace = dict(vars(cls))
+    prefix = f'_{stripped}__'
+    for name, value in vars(cls).items():
+        if name.startswith(prefix):
+            namespace[f'__{name[len(prefix) :]}'] = value
+    return namespace
+
+
 def _owning_class(func: Any) -> type | None:
     """The class body `func` was written in, for a function that carries no binding.
 
@@ -214,7 +235,7 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
         if any(globalns is known_globals and defined_in is known_class for known_globals, known_class in seen):
             continue
         seen.append((globalns, defined_in))
-        localns: Mapping[str, Any] = vars(defined_in) if defined_in is not None else {}
+        localns: Mapping[str, Any] = _class_namespace(defined_in) if defined_in is not None else {}
         sources.append(_AnnotationSource(globalns, localns, _declared_parameters(candidate)))
     return sources
 

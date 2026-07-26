@@ -313,11 +313,30 @@ def _get_creator_module() -> ModuleType | None:
 
 
 def _annotation_namespace(target: Any) -> dict[str, Any]:
-    """Namespace a stringified annotation of `target` should be evaluated in."""
-    func = getattr(target, '__init__', target) if inspect.isclass(target) else target
+    """Namespace a stringified annotation of `target` should be evaluated in.
+
+    An annotation has to be resolved where it was written, so follow the same hops
+    :func:`inspect.signature` takes to find the parameters: through ``functools.partial``
+    and ``functools.wraps`` wrappers (whose own module knows nothing about the wrapped
+    function's names), and into ``__init__`` for a class. Callable objects keep no
+    globals of their own and fall back to the module their class came from.
+    """
+    func = target
+    seen: set[int] = set()  # a `__wrapped__` chain can be circular; `inspect.unwrap` guards too
+    while id(func) not in seen:
+        seen.add(id(func))
+        if isinstance(func, functools.partial):
+            func = func.func
+        elif inspect.isclass(func):
+            func = func.__init__
+        elif hasattr(func, '__wrapped__'):
+            func = func.__wrapped__
+        else:
+            break
+
     namespace = getattr(func, '__globals__', None)
     if namespace is None:
-        namespace = getattr(inspect.getmodule(target), '__dict__', None)
+        namespace = getattr(inspect.getmodule(func), '__dict__', None)
     return namespace or {}
 
 
@@ -345,9 +364,17 @@ def _is_config_annotation(annotation: Any, target: Any) -> bool:
         if Config.__name__ not in annotation:
             return False
         try:
-            annotation = eval(annotation, _annotation_namespace(target))
+            resolved = eval(annotation, _annotation_namespace(target))
         except Exception:
             return False
+        if isinstance(resolved, str):
+            # A quoted annotation in a module that also postpones evaluation is stored as
+            # the *source text* of the quoted expression: `pipeline: 'cfn.Config'` arrives
+            # as "'cfn.Config'" and evaluates to a string that still has to be resolved.
+            # Each round strips one layer of quoting, so this terminates; the equality
+            # check is the belt to that braces.
+            return resolved != annotation and _is_config_annotation(resolved, target)
+        annotation = resolved
 
     if hasattr(annotation, '__metadata__'):  # Annotated[Config, ...]
         return _is_config_annotation(annotation.__origin__, target)

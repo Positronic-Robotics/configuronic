@@ -6,10 +6,12 @@ Everything else stays as it was: the stored value is an ordinary `Config`, so ov
 and traversal keep working.
 """
 
+import functools
+import inspect
 from typing import Annotated, Optional
 
 import configuronic as cfn
-from tests.support_package import lazy_annotations
+from tests.support_package import lazy_annotations, lazy_wrappers
 
 
 class Codec:
@@ -164,6 +166,23 @@ def test_postponed_annotation_with_bare_spelling():
     received, _ = cfg.instantiate()
 
     assert isinstance(received, cfn.Config)
+
+
+def test_postponed_quoted_annotation():
+    # Quoting an annotation in a module that also postpones evaluation stores the *source
+    # text* of the quoted expression, so it takes one more round to resolve.
+    cfg = cfn.Config(lazy_annotations.quoted_spelling, pipeline=cfn.Config(lazy_annotations.Pipeline))
+
+    received, _ = cfg.instantiate()
+
+    assert isinstance(received, cfn.Config)
+
+
+def test_postponed_annotation_on_a_class_target():
+    server = cfn.Config(lazy_annotations.Server, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
+
+    assert isinstance(server.pipeline, cfn.Config)
+    assert isinstance(server.pipeline.instantiate(), lazy_annotations.Pipeline)
 
 
 def test_postponed_optional_annotation():
@@ -375,6 +394,48 @@ def test_keyword_only_parameter_is_handed_over():
 def test_target_without_an_introspectable_signature_still_instantiates():
     # C callables often refuse `inspect.signature`; nothing is annotated there anyway.
     assert cfn.Config(dict, a=1).instantiate() == {'a': 1}
+
+
+def test_partial_target_resolves_the_wrapped_functions_annotations():
+    # `inspect.signature` reports the wrapped function's parameters, so its annotations
+    # must be resolved where they were written, not in functools.
+    target = functools.partial(lazy_annotations.aliased_spelling, host='127.0.0.1')
+
+    received, host = cfn.Config(target, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
+
+    assert isinstance(received, cfn.Config)
+    assert host == '127.0.0.1'
+
+
+def test_partial_target_shifts_positional_slots():
+    def prefixed(prefix: str, pipeline: cfn.Config):
+        return prefix, pipeline
+
+    prefix, received = cfn.Config(functools.partial(prefixed, 'p'), pipeline_cfg).instantiate()
+
+    assert prefix == 'p'
+    assert isinstance(received, cfn.Config)
+
+
+def test_wraps_decorated_target_resolves_the_wrapped_functions_annotations():
+    target = lazy_wrappers.passthrough(lazy_annotations.aliased_spelling)
+
+    received, _ = cfn.Config(target, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
+
+    assert isinstance(received, cfn.Config)
+
+
+def test_circular_wrapper_chain_does_not_spin():
+    def target(pipeline: 'cfn.Config'):
+        return pipeline
+
+    # `inspect.signature` stops unwrapping at a `__signature__`, so it accepts this target
+    # and hands us annotations to resolve — while the chain to the function that wrote them
+    # is circular.
+    target.__signature__ = inspect.signature(target)
+    target.__wrapped__ = target
+
+    assert isinstance(cfn.Config(target, pipeline=pipeline_cfg).instantiate(), cfn.Config)
 
 
 def test_unhashable_target_is_handled():

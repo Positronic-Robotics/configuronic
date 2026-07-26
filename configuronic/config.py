@@ -7,7 +7,7 @@ import posixpath
 from collections import deque
 from collections.abc import Callable
 from types import ModuleType, UnionType
-from typing import Any, ForwardRef, NamedTuple, Union, get_args, get_origin
+from typing import Annotated, Any, ForwardRef, NamedTuple, Union, get_args, get_origin
 
 import yaml
 
@@ -347,11 +347,15 @@ def _annotation_namespaces(target: Any) -> list[dict[str, Any]]:
     a metaclass ``__call__``, from ``__new__`` or from ``__init__``, chosen by rules that
     vary across Python versions — so offer all three, most specific first, and let the
     caller take the first that resolves. Each of those can be decorated in turn, so each
-    is followed the same way. Callable objects keep no globals of their own and fall back
-    to the module their class came from.
+    is followed the same way. For a callable object the parameters come from its class'
+    ``__call__``, which may be inherited from a base in another module; the object itself
+    keeps no globals and falls back to the module its own class came from.
     """
     func = _unwrap_signature_source(target)
-    sources = [type(func).__call__, func.__new__, func.__init__] if inspect.isclass(func) else [func]
+    if inspect.isclass(func):
+        sources = [type(func).__call__, func.__new__, func.__init__]
+    else:
+        sources = [type(func).__call__, func]
 
     namespaces: list[dict[str, Any]] = []
     for source in sources:
@@ -409,13 +413,16 @@ def _is_config_annotation(annotation: Any, target: Any, _resolved_text: frozense
         if annotation is _UNRESOLVED:
             return False
 
-    if hasattr(annotation, '__metadata__'):  # Annotated[Config, ...]
+    # An annotation can be any object, so ask typing what this one is rather than reading
+    # attributes off it: something unrelated carrying a `__metadata__` is not `Annotated`.
+    origin = get_origin(annotation)
+
+    if origin is Annotated:  # Annotated[Config, ...]
         return _is_config_annotation(annotation.__origin__, target, _resolved_text)
 
     if annotation is Config:
         return True
 
-    origin = get_origin(annotation)
     if origin is Union or origin is UnionType:
         return any(_is_config_annotation(arg, target, _resolved_text) for arg in get_args(annotation))
 

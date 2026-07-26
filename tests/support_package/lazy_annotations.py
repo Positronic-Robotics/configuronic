@@ -66,6 +66,13 @@ class Server:
         self.host = host
 
 
+class CallableBase:
+    """A callable base class, subclassed in modules that never heard of the name `C`."""
+
+    def __call__(self, pipeline: C, host: str = 'localhost'):
+        return pipeline, host
+
+
 class DecoratedInit:
     """A class whose `__init__` is decorated from a module that knows nothing about `cfn`."""
 

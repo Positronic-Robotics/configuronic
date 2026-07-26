@@ -266,6 +266,30 @@ def test_annotation_that_cannot_be_resolved_is_not_lazy():
     assert isinstance(unresolvable.instantiate(), Pipeline)
 
 
+def test_annotation_carrying_metadata_is_not_mistaken_for_annotated():
+    # An annotation can be any object. One that happens to carry `__metadata__` is not
+    # `Annotated`, and reading `__origin__` off it must not break instantiate().
+    class Marked:
+        __metadata__ = ('not really Annotated',)
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def marked(pipeline: Marked):
+        return pipeline
+
+    assert isinstance(marked.instantiate(), Pipeline)
+
+
+def test_inherited_call_resolves_in_its_defining_module():
+    # `__call__` comes from a base class in another module, and its annotation uses a name
+    # only that module has.
+    class Server(lazy_annotations.CallableBase):
+        pass
+
+    received, _ = cfn.Config(Server(), pipeline=pipeline_cfg).instantiate()
+
+    assert isinstance(received, cfn.Config)
+
+
 def test_callable_object_target_resolves_its_annotations():
     # A target that is neither a function nor a class has no __globals__, so the
     # annotation is resolved in the module its class came from.

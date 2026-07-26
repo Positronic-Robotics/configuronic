@@ -355,10 +355,20 @@ class _Resolution(NamedTuple):
 
     marker: type
     sources: list[_AnnotationSource]
-    followed: frozenset[str | int] = frozenset()
+    followed: frozenset[Any] = frozenset()
     bound: Mapping[Any, Any] = MappingProxyType({})
 
-    def following(self, step: str | int, binding: Any = (), wrote_it: Any = ()) -> _Resolution:
+    def scope(self) -> frozenset[int]:
+        """What identifies the namespaces a string would be resolved in from here.
+
+        A spelling means one thing in one scope and something else in another, so it is
+        only the pair that says whether this has been resolved before. Following an alias
+        brings the module it was written in along, which is a different scope; the same
+        text met there is a different name, not a cycle.
+        """
+        return frozenset(id(source.globalns) for source in self.sources)
+
+    def following(self, step: Any, binding: Any = (), wrote_it: Any = ()) -> _Resolution:
         """The same resolution, one step further along.
 
         ``binding`` is what a specialized alias binds its type parameters to. ``wrote_it``
@@ -404,12 +414,13 @@ class _Resolution(NamedTuple):
         while True:
             if isinstance(annotation, ForwardRef | str):
                 text = annotation.__forward_arg__ if isinstance(annotation, ForwardRef) else annotation
-                if text in state.followed:
+                here = (text, state.scope())
+                if here in state.followed:
                     return False
                 # A `ForwardRef` may name the module it was written in, which is then where
                 # it is resolved — `typing.get_type_hints` honours that, and so does this.
                 declared_in = getattr(annotation, '__forward_module__', None) if annotation is not text else None
-                state = state.following(text, wrote_it=_module_source(declared_in))
+                state = state.following(here, wrote_it=_module_source(declared_in))
                 annotation = _resolve_string_annotation(text, state.sources)
                 if annotation is _UNRESOLVED:
                     return False

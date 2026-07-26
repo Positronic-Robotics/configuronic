@@ -14,7 +14,13 @@ from typing import Annotated, Optional
 import pytest
 
 import configuronic as cfn
-from tests.support_package import lazy_annotations, lazy_declared_signature, lazy_rival_declarations, lazy_wrappers
+from tests.support_package import (
+    lazy_alias_shadow,
+    lazy_annotations,
+    lazy_declared_signature,
+    lazy_rival_declarations,
+    lazy_wrappers,
+)
 
 
 class Codec:
@@ -322,6 +328,16 @@ def test_type_alias_whose_value_is_a_forward_reference_resolves_where_it_was_wri
         return pipeline
 
     assert isinstance(via_quoted_alias.instantiate(), cfn.Config)
+
+
+@pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
+def test_alias_value_reusing_the_annotation_spelling_is_not_a_cycle():
+    # `pipeline: C` is stored as the text 'C', which here names an alias whose own value is
+    # the text 'C' — the name it means in the module it was written in. The same spelling
+    # twice, in two scopes, is two names rather than a cycle.
+    cfg = cfn.Config(lazy_alias_shadow.shadowed_spelling, pipeline=pipeline_cfg)
+
+    assert isinstance(cfg.instantiate(), cfn.Config)
 
 
 @pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')

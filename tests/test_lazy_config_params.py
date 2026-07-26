@@ -314,6 +314,17 @@ def test_type_alias_is_followed():
 
 
 @pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
+def test_type_alias_whose_value_is_a_forward_reference_resolves_where_it_was_written():
+    # `type QuotedValue = 'C'` hands back the string `'C'`, which names something bound in
+    # the module the alias was written in — not in this one, which only imported the alias.
+    @cfn.config(pipeline=pipeline_cfg)
+    def via_quoted_alias(pipeline: lazy_annotations.QUOTED_VALUE_ALIAS):
+        return pipeline
+
+    assert isinstance(via_quoted_alias.instantiate(), cfn.Config)
+
+
+@pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
 def test_specialized_type_alias_is_followed():
     # `type Deferred[T] = T | None` used as `Deferred[Config]` is a generic alias over the
     # alias, not the alias itself, and what it stands for is written in terms of `T`.

@@ -8,6 +8,7 @@ parameter wants the ``Config`` itself (issue #38).
 from __future__ import annotations
 
 import functools
+import typing
 
 import configuronic as cfn
 from configuronic import Config
@@ -49,6 +50,11 @@ def with_unresolvable_neighbour(pipeline: cfn.Config, other: NeverDefined = None
 
 def resolving_target(pipeline: Pipeline):
     return pipeline
+
+
+# A `type` alias whose value is a forward reference to a name only this module binds. The
+# module that annotates with it need not have heard of `C`.
+QUOTED_VALUE_ALIAS = typing.TypeAliasType('QuotedValue', 'C') if hasattr(typing, 'TypeAliasType') else None
 
 
 # Module-level names defined in terms of each other: resolving one leads back to it.

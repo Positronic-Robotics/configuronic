@@ -355,9 +355,18 @@ class _Resolution(NamedTuple):
     followed: frozenset[str | int] = frozenset()
     bound: Mapping[Any, Any] = MappingProxyType({})
 
-    def following(self, step: str | int, binding: Any = ()) -> _Resolution:
-        """The same resolution, one step further along, with any type parameters bound."""
-        return self._replace(followed=self.followed | {step}, bound={**self.bound, **dict(binding)})
+    def following(self, step: str | int, binding: Any = (), wrote_it: Any = ()) -> _Resolution:
+        """The same resolution, one step further along.
+
+        ``binding`` is what a specialized alias binds its type parameters to. ``wrote_it``
+        is the namespace the step was written in, if the step names one — what is reached
+        through it was written there too, so that namespace answers first from here on.
+        """
+        return self._replace(
+            followed=self.followed | {step},
+            bound={**self.bound, **dict(binding)},
+            sources=[*wrote_it, *self.sources],
+        )
 
     def wants_marker(self, annotation: Any) -> bool:
         """Does this annotation ask for the marker itself?
@@ -397,14 +406,20 @@ class _Resolution(NamedTuple):
                 # A `ForwardRef` may name the module it was written in, which is then where
                 # it is resolved — `typing.get_type_hints` honours that, and so does this.
                 declared_in = getattr(annotation, '__forward_module__', None) if annotation is not text else None
-                state = state.following(text)
-                annotation = _resolve_string_annotation(text, _module_source(declared_in) + state.sources)
+                state = state.following(text, wrote_it=_module_source(declared_in))
+                annotation = _resolve_string_annotation(text, state.sources)
                 if annotation is _UNRESOLVED:
                     return False
             elif (alias := _type_alias(annotation)) is not None:
                 if id(alias) in state.followed:
                     return False
-                state = state.following(id(alias), zip(alias.__type_params__, get_args(annotation), strict=False))
+                # The value was written where the alias was, which is not where it is
+                # used: `type Lazy = 'C'` names something its importer need not have.
+                state = state.following(
+                    id(alias),
+                    zip(alias.__type_params__, get_args(annotation), strict=False),
+                    _module_source(getattr(alias, '__module__', None)),
+                )
                 try:
                     annotation = alias.__value__
                 except Exception:

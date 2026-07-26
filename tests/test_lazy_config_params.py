@@ -341,6 +341,16 @@ def test_alias_value_reusing_the_annotation_spelling_is_not_a_cycle():
 
 
 @pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
+def test_repeated_spelling_in_a_class_body_and_its_module_is_not_a_cycle():
+    # `pipeline: C` resolves in the class body to an alias whose value is the text 'C',
+    # which means the module's `C`. The two scopes share their globals and differ only in
+    # what is local to them, so that is what has to tell the second lookup from a cycle.
+    cfg = cfn.Config(lazy_annotations.CallableShadowingTheAlias(), pipeline=pipeline_cfg)
+
+    assert isinstance(cfg.instantiate(), cfn.Config)
+
+
+@pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
 def test_specialized_type_alias_is_followed():
     # `type Deferred[T] = T | None` used as `Deferred[Config]` is a generic alias over the
     # alias, not the alias itself, and what it stands for is written in terms of `T`.
@@ -815,6 +825,14 @@ def test_declared_signature_is_not_outvoted_by_the_constructor_it_replaces():
     cfg = cfn.Config(lazy_declared_signature.DeclaresOverUnresolvableInit, pipeline=pipeline_cfg)
 
     assert isinstance(cfg.instantiate().pipeline, cfn.Config)
+
+
+def test_callable_object_declaring_its_signature_resolves_in_its_class_body():
+    # The instance carries no namespace of its own, but the declaration is a statement in
+    # its class' body, and that is where the name it uses is bound.
+    cfg = cfn.Config(lazy_declared_signature.CallableDeclaringItsSignature(), pipeline=pipeline_cfg)
+
+    assert isinstance(cfg.instantiate(), cfn.Config)
 
 
 def test_metaclass_declared_signature_resolves_where_the_metaclass_wrote_it():

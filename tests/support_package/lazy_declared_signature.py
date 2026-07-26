@@ -71,3 +71,20 @@ class DeclaresOverUnresolvableInit(lazy_annotations.UnresolvableInit):
     __signature__ = inspect.Signature([
         inspect.Parameter('pipeline', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation='Alias')
     ])
+
+
+class CallableDeclaringItsSignature:
+    """A callable object whose class declares the signature, naming a name bound here.
+
+    The declaration is a statement in this body, so this body is the scope it was written
+    against — the instance itself carries no namespace at all.
+    """
+
+    Alias = C
+
+    __signature__ = inspect.Signature([
+        inspect.Parameter('pipeline', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation='Alias')
+    ])
+
+    def __call__(self, pipeline):
+        return pipeline

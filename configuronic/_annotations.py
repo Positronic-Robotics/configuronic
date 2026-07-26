@@ -45,6 +45,10 @@ except ImportError:  # pragma: no cover - exercised on 3.10 and 3.11
 
 _UNRESOLVED = object()
 
+# One shared empty scope, so that two sources with nothing local to them are the same
+# scope rather than two — which is what :meth:`_Resolution.scope` compares.
+_NO_LOCALS: Mapping[str, Any] = MappingProxyType({})
+
 
 def _partial_method_of(func: Any) -> functools.partialmethod | None:
     """The `functools.partialmethod` behind an unbound accessor, if this is one.
@@ -230,6 +234,12 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
         owner = bound_to if inspect.isclass(bound_to) else type(bound_to) if bound_to is not None else None
         written_in = _defining_class(owner, getattr(func, '__name__', '')) if owner is not None else None
         written_in = written_in if written_in is not None else _owning_class(func)
+        if isinstance(getattr(func, '__signature__', None), inspect.Signature):
+            # The parameters come from a declared signature. For anything but a function
+            # that is a statement in a class body — a callable object's, say — and that
+            # body is where its annotations were written; a function carries its own.
+            declared_in = _defining_class(type(func), '__signature__')
+            written_in = declared_in if declared_in is not None else written_in
         candidates = [(type(func).__call__, _defining_class(type(func), '__call__')), (func, written_in)]
 
     sources: list[_AnnotationSource] = []
@@ -249,7 +259,7 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
         if any(globalns is known_globals and defined_in is known_class for known_globals, known_class in seen):
             continue
         seen.append((globalns, defined_in))
-        localns: Mapping[str, Any] = _class_namespace(defined_in) if defined_in is not None else {}
+        localns = _class_namespace(defined_in) if defined_in is not None else _NO_LOCALS
         sources.append(_AnnotationSource(globalns, localns, _declared_parameters(candidate), rivals))
     return sources
 
@@ -312,7 +322,7 @@ def _module_source(module: Any) -> list[_AnnotationSource]:
     if isinstance(module, str):
         module = sys.modules.get(module)
     namespace = getattr(module, '__dict__', None)
-    return [_AnnotationSource(namespace, {}, {})] if namespace else []
+    return [_AnnotationSource(namespace, _NO_LOCALS, {})] if namespace else []
 
 
 def _resolve_string_annotation(annotation: str, sources: list[_AnnotationSource]) -> Any:
@@ -358,15 +368,19 @@ class _Resolution(NamedTuple):
     followed: frozenset[Any] = frozenset()
     bound: Mapping[Any, Any] = MappingProxyType({})
 
-    def scope(self) -> frozenset[int]:
+    def scope(self) -> frozenset[tuple[int, int]]:
         """What identifies the namespaces a string would be resolved in from here.
 
         A spelling means one thing in one scope and something else in another, so it is
         only the pair that says whether this has been resolved before. Following an alias
         brings the module it was written in along, which is a different scope; the same
         text met there is a different name, not a cycle.
+
+        Both halves of each namespace count. A class body and the module around it share
+        their globals while binding the same name to different things, so recording only
+        the globals would make those one scope and a name resolved in each of them a cycle.
         """
-        return frozenset(id(source.globalns) for source in self.sources)
+        return frozenset((id(source.globalns), id(source.localns)) for source in self.sources)
 
     def following(self, step: Any, binding: Any = (), wrote_it: Any = ()) -> _Resolution:
         """The same resolution, one step further along.

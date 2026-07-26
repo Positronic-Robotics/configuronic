@@ -140,6 +140,19 @@ class PartialFactory:
     configured = functools.partialmethod(build, 'bound-extra')
 
 
+class CallableShadowingTheAlias:
+    """Binds `C` in its body to the alias whose own value quotes the module's `C`.
+
+    The two spellings are the same text in scopes that share their globals, so telling
+    them apart takes more than the module they are resolved against.
+    """
+
+    C = QUOTED_VALUE_ALIAS
+
+    def __call__(self, pipeline: C):
+        return pipeline
+
+
 class CallableBase:
     """A callable base class, subclassed in modules that never heard of the name `C`."""
 

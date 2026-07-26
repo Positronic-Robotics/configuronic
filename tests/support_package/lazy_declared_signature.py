@@ -9,6 +9,7 @@ import functools
 import inspect
 
 from configuronic import Config as C
+from tests.support_package import lazy_signature_metaclass
 
 
 def with_declared_signature(func):
@@ -43,3 +44,15 @@ class DeclaresItsOwnSignature(TakesAPipeline):
     __signature__ = inspect.Signature([
         inspect.Parameter('pipeline', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation='Alias')
     ])
+
+
+class BuiltByMetaclassDeclaringInItsBody(TakesAPipeline, metaclass=lazy_signature_metaclass.DeclaresInItsBody):
+    """Declares no signature of its own, so the one found through the metaclass is used.
+
+    The name that signature annotates with is bound in the metaclass body, and nothing in
+    *this* module binds it.
+    """
+
+
+class BuiltByMetaclassDeclaringFromItsModule(TakesAPipeline, metaclass=lazy_signature_metaclass.DeclaresFromItsModule):
+    """The same, with the name bound at module level beside the metaclass."""

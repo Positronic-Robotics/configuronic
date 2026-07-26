@@ -743,6 +743,17 @@ def test_class_declaring_its_own_signature_resolves_its_class_body_alias():
     assert isinstance(cfg.instantiate().pipeline, cfn.Config)
 
 
+def test_metaclass_declared_signature_resolves_where_the_metaclass_wrote_it():
+    # A class that declares no signature of its own gets one through its metaclass, so the
+    # annotations belong to the metaclass' body — and to its module, which is not the
+    # module the class itself lives in.
+    from_body = cfn.Config(lazy_declared_signature.BuiltByMetaclassDeclaringInItsBody, pipeline=pipeline_cfg)
+    from_module = cfn.Config(lazy_declared_signature.BuiltByMetaclassDeclaringFromItsModule, pipeline=pipeline_cfg)
+
+    assert isinstance(from_body.instantiate().pipeline, cfn.Config)
+    assert isinstance(from_module.instantiate().pipeline, cfn.Config)
+
+
 def test_circular_wrapper_chain_does_not_spin():
     def target(pipeline: 'cfn.Config'):
         return pipeline

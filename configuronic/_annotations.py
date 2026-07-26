@@ -173,11 +173,14 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
             (func.__new__, _defining_class(func, '__new__')),
             (func.__init__, _defining_class(func, '__init__')),
         ]
-        if hasattr(func, '__signature__'):
-            # A declared signature outranks all three: it is what `inspect.signature`
-            # reports, and being a statement in a class body, the body that binds
-            # `__signature__` is also the scope its annotations were written against.
-            candidates.insert(0, (func, _defining_class(func, '__signature__')))
+        # A declared signature outranks all three: it is what `inspect.signature` reports.
+        # Being a statement in a class body, the body that binds `__signature__` is where
+        # its annotations were written — the class' own body, or its metaclass', which is
+        # where the attribute is found when the class itself does not define one.
+        declared_in = _defining_class(func, '__signature__')
+        declared_in = declared_in if declared_in is not None else _defining_class(type(func), '__signature__')
+        if declared_in is not None:
+            candidates.insert(0, (func, declared_in))
     else:
         # A method was written in a class body too. A bound one names what it is bound to;
         # a static method (or any function reached through its class) has only its
@@ -197,7 +200,10 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
         candidate = _unwrap_signature_source(candidate)
         globalns = getattr(candidate, '__globals__', None)
         if globalns is None:
-            globalns = getattr(inspect.getmodule(candidate), '__dict__', None)
+            # No globals of its own (a class, a C callable), so the enclosing scope is the
+            # module of the body it was written in — which is not the candidate's own
+            # module when that body belongs to a base or to a metaclass.
+            globalns = getattr(inspect.getmodule(defined_in if defined_in is not None else candidate), '__dict__', None)
         if not globalns:
             continue
         # Compare on what the namespaces are *taken from*: `vars()` hands back a new

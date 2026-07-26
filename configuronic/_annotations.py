@@ -455,8 +455,8 @@ class _Declaration:
     A parameter's annotation is only resolved when a config actually supplies that
     parameter. Resolving one means evaluating whatever expression was written there, which
     can import a module or run code of its own, and a config has no business causing that
-    for parameters it never sets. Answers are remembered, so each parameter costs that at
-    most once per target.
+    for parameters it never sets. Answers are remembered for as long as this object lives,
+    which is the one lookup it was made for.
 
     Reading a signature must never be what breaks `instantiate()`: a target free to define
     `__signature__`, `__getattr__` or `__class__` however it likes can make introspection
@@ -518,40 +518,23 @@ class _Declaration:
         answer = self._answered.get(param.name)
         if answer is None:
             try:
-                if self._sources is None:
-                    self._sources = _annotation_sources(self._target)
-                # Every scope that could have written the parameter has to agree, so an
-                # answer that rests on which candidate was guessed is declined.
-                answer = all(
-                    _Resolution(self._marker, scope).wants_marker(param.annotation)
-                    for scope in _scopes_for(self._sources, param)
-                )
+                if param.annotation is inspect.Parameter.empty:
+                    # Nothing was declared, so there is nothing to resolve and no reason to
+                    # go looking for the namespaces it would have been resolved in.
+                    answer = False
+                else:
+                    if self._sources is None:
+                        self._sources = _annotation_sources(self._target)
+                    # Every scope that could have written the parameter has to agree, so an
+                    # answer that rests on which candidate was guessed is declined.
+                    answer = all(
+                        _Resolution(self._marker, scope).wants_marker(param.annotation)
+                        for scope in _scopes_for(self._sources, param)
+                    )
             except Exception:
                 answer = False
             self._answered[param.name] = answer
         return answer
-
-
-class _TargetKey:
-    """Cache key that compares targets by identity.
-
-    `lru_cache` keys by ``__hash__``/``__eq__``, and a callable object may define either:
-    two targets that compare equal can still report different signatures (a per-instance
-    ``__signature__``, say), and sharing one declaration between them would hand the wrong
-    arguments over unresolved. Keying by identity also means a target that cannot be hashed
-    at all is no special case; holding the target here keeps its id from being reused.
-    """
-
-    __slots__ = ('target',)
-
-    def __init__(self, target: Any):
-        self.target = target
-
-    def __hash__(self) -> int:
-        return id(self.target)
-
-    def __eq__(self, other: Any) -> bool:
-        return isinstance(other, _TargetKey) and other.target is self.target
 
 
 def declarations_for(marker: type) -> Callable[[Any], _Declaration]:
@@ -559,20 +542,16 @@ def declarations_for(marker: type) -> Callable[[Any], _Declaration]:
 
     The marker is a parameter rather than an import so that this module stays a reader of
     signatures, with nothing to say about what the class it looks for means.
+
+    Nothing is remembered between lookups. Reading a signature and resolving annotations
+    costs far more than instantiating a small config, and holding the answer would be the
+    obvious trade — but a target is free to change what it declares, and an answer kept
+    from before that is silently wrong in a way nothing reveals. Answers are remembered
+    for the length of one lookup, so a target with several such parameters reads its
+    signature once, and no longer.
     """
 
-    # Reading the declaration means inspecting a signature and resolving annotations, which
-    # is an order of magnitude more expensive than instantiating a small config. It depends
-    # on the target alone, so cache it rather than paying it on every instantiate(). A
-    # target's signature is read once and taken as settled: rewriting a live function's
-    # __annotations__ after a config has instantiated it is not observed, and checking for
-    # that would mean re-reading the signature every time, which is the cost the cache
-    # exists to avoid.
-    @functools.lru_cache(maxsize=1024)
-    def cached(key: _TargetKey) -> _Declaration:
-        return _Declaration(key.target, marker)
-
     def declaration_for(target: Any) -> _Declaration:
-        return cached(_TargetKey(target))
+        return _Declaration(target, marker)
 
     return declaration_for

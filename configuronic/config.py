@@ -8,7 +8,7 @@ import sys
 from collections import deque
 from collections.abc import Callable, Mapping
 from types import ModuleType, UnionType
-from typing import Annotated, Any, ForwardRef, NamedTuple, Union, get_args, get_origin
+from typing import Annotated, Any, ForwardRef, NamedTuple, TypeVar, Union, get_args, get_origin
 
 import yaml
 
@@ -522,8 +522,26 @@ def _resolve_string_annotation(annotation: str, sources: list[_AnnotationSource]
     return _UNRESOLVED
 
 
+def _type_alias(annotation: Any) -> Any | None:
+    """The `type` alias (PEP 695) this annotation stands for, if it stands for one.
+
+    An alias used bare (``Deferred``) is the alias object itself; one used with arguments
+    (``Deferred[Config]``) is a generic alias over it, and what it stands for is only
+    reachable through the alias it wraps.
+    """
+    if TypeAliasType is None:
+        return None
+    if isinstance(annotation, TypeAliasType):
+        return annotation
+    origin = get_origin(annotation)
+    return origin if isinstance(origin, TypeAliasType) else None
+
+
 def _is_config_annotation(
-    annotation: Any, sources: list[_AnnotationSource], _seen: frozenset[str | int] = frozenset()
+    annotation: Any,
+    sources: list[_AnnotationSource],
+    _seen: frozenset[str | int] = frozenset(),
+    _bound: Mapping[Any, Any] | None = None,
 ) -> bool:
     """Does this parameter annotation ask for the `Config` itself?
 
@@ -534,8 +552,11 @@ def _is_config_annotation(
 
     ``sources`` are where a stringified annotation may be resolved, from
     :func:`_sources_for`. ``_seen`` carries what has already been followed on the way here
-    — annotation strings, and the identities of ``type`` aliases — because either can be
-    written in terms of itself, and nothing that comes round again is a ``Config``.
+    — annotation strings, and the identities of ``type`` aliases and type parameters —
+    because any of them can be written in terms of itself, and nothing that comes round
+    again is a ``Config``. ``_bound`` carries what the arguments of a specialized alias
+    (``Deferred[Config]``) bind its type parameters to, so a parameter met inside the
+    alias' value stands for what was passed for it.
     """
     if annotation is inspect.Parameter.empty:
         return False
@@ -554,7 +575,10 @@ def _is_config_annotation(
     # terms of each other (`A = 'B'`, `B = 'A'`), and no cycle of them is a Config.
     #
     # A `type X = ...` alias (PEP 695) hides what it stands for behind `__value__`, which is
-    # evaluated on access and may be the alias itself, so it is followed the same way.
+    # evaluated on access and may be the alias itself, so it is followed the same way. Given
+    # arguments (`type Deferred[T] = T | None` used as `Deferred[Config]`), what its value is
+    # written in terms of are its type parameters, so those are followed too.
+    _bound = _bound if _bound is not None else {}
     while True:
         if isinstance(annotation, ForwardRef | str):
             text = annotation.__forward_arg__ if isinstance(annotation, ForwardRef) else annotation
@@ -567,14 +591,20 @@ def _is_config_annotation(
             annotation = _resolve_string_annotation(text, _module_source(declared_in) + sources)
             if annotation is _UNRESOLVED:
                 return False
-        elif TypeAliasType is not None and isinstance(annotation, TypeAliasType):
+        elif (alias := _type_alias(annotation)) is not None:
+            if id(alias) in _seen:
+                return False
+            _seen = _seen | {id(alias)}
+            _bound = {**_bound, **dict(zip(alias.__type_params__, get_args(annotation), strict=False))}
+            try:
+                annotation = alias.__value__
+            except Exception:
+                return False
+        elif isinstance(annotation, TypeVar) and annotation in _bound:
             if id(annotation) in _seen:
                 return False
             _seen = _seen | {id(annotation)}
-            try:
-                annotation = annotation.__value__
-            except Exception:
-                return False
+            annotation = _bound[annotation]
         else:
             break
 
@@ -583,13 +613,13 @@ def _is_config_annotation(
     origin = get_origin(annotation)
 
     if origin is Annotated:  # Annotated[Config, ...]
-        return _is_config_annotation(annotation.__origin__, sources, _seen)
+        return _is_config_annotation(annotation.__origin__, sources, _seen, _bound)
 
     if annotation is Config:
         return True
 
     if origin is Union or origin is UnionType:
-        return any(_is_config_annotation(arg, sources, _seen) for arg in get_args(annotation))
+        return any(_is_config_annotation(arg, sources, _seen, _bound) for arg in get_args(annotation))
 
     return False
 

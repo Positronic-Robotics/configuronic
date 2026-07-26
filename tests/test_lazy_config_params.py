@@ -290,6 +290,65 @@ def test_type_alias_is_followed():
 
 
 @pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
+def test_specialized_type_alias_is_followed():
+    # `type Deferred[T] = T | None` used as `Deferred[Config]` is a generic alias over the
+    # alias, not the alias itself, and what it stands for is written in terms of `T`.
+    parameter = typing.TypeVar('T')
+    identity = typing.TypeAliasType('Identity', parameter, type_params=(parameter,))
+    deferred = typing.TypeAliasType('Deferred', parameter | None, type_params=(parameter,))
+    marked = typing.TypeAliasType('Marked', typing.Annotated[parameter, 'note'], type_params=(parameter,))
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def via_identity(pipeline: identity[cfn.Config]):
+        return pipeline
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def via_optional(pipeline: deferred[cfn.Config]):
+        return pipeline
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def via_annotated(pipeline: marked[cfn.Config]):
+        return pipeline
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def specialized_with_something_else(pipeline: identity[int]):
+        return pipeline
+
+    assert isinstance(via_identity.instantiate(), cfn.Config)
+    assert isinstance(via_optional.instantiate(), cfn.Config)
+    assert isinstance(via_annotated.instantiate(), cfn.Config)
+    assert isinstance(specialized_with_something_else.instantiate(), Pipeline)
+
+
+@pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
+def test_specialized_type_alias_of_a_container_is_not_lazy():
+    # `Boxed[Config]` stands for `list[Config]`: a container of configs resolves as before,
+    # since only a whole argument can be handed over unresolved.
+    parameter = typing.TypeVar('T')
+    boxed = typing.TypeAliasType('Boxed', list[parameter], type_params=(parameter,))
+
+    @cfn.config(pipeline=[pipeline_cfg])
+    def via_container_alias(pipeline: boxed[cfn.Config]):
+        return pipeline
+
+    assert [type(item) for item in via_container_alias.instantiate()] == [Pipeline]
+
+
+@pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
+def test_type_parameter_bound_to_itself_is_not_lazy():
+    # Specializing an alias with its own type parameter binds `T` to `T`; substituting it
+    # must stop rather than spin.
+    parameter = typing.TypeVar('T')
+    self_bound = typing.TypeAliasType('SelfBound', parameter, type_params=(parameter,))
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def via_self_bound(pipeline: self_bound[parameter]):
+        return pipeline
+
+    assert isinstance(via_self_bound.instantiate(), Pipeline)
+
+
+@pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
 def test_self_referential_type_alias_is_not_lazy():
     # `type SelfRef = SelfRef` evaluates to itself; following it must stop, not recurse.
     # Written through exec so the 3.12 syntax never reaches the parser on older versions.

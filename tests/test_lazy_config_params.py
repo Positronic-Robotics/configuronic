@@ -272,6 +272,20 @@ def test_bound_method_target_resolves_a_class_body_alias():
     assert isinstance(cfg.instantiate(), cfn.Config)
 
 
+def test_decorated_bound_method_keeps_what_it_is_bound_to():
+    # The class is defined inside a function, so its body is reachable only through the
+    # binding the target carries — and a decorator leads through `__wrapped__` to a
+    # function that knows nothing about the instance.
+    holder = lazy_annotations.make_local_alias_holder()
+
+    cfg = cfn.Config(holder.build, pipeline=cfn.Config(lazy_annotations.Pipeline))
+    # Wrapped again, so the binding sits in the middle of the chain rather than at its head.
+    partially_applied = cfn.Config(functools.partial(holder.build), pipeline=cfn.Config(lazy_annotations.Pipeline))
+
+    assert isinstance(cfg.instantiate(), cfn.Config)
+    assert isinstance(partially_applied.instantiate(), cfn.Config)
+
+
 @pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
 def test_type_alias_is_followed():
     deferred = typing.TypeAliasType('Deferred', cfn.Config)

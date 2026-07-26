@@ -91,6 +91,23 @@ class InheritsClassBodyAlias(ClassBodyAlias):
     """Inherits the annotated `__init__`; the alias is in the base's body, not this one."""
 
 
+def make_local_alias_holder():
+    """An instance of a class defined inside a function, whose body binds the alias.
+
+    Once this call has returned there is no way to reach the class from a qualified name,
+    so a target has to carry the binding to it — which a decorator must not lose.
+    """
+
+    class LocalAlias:
+        Alias = cfn.Config
+
+        @lazy_wrappers.passthrough
+        def build(self, pipeline: Alias):
+            return pipeline
+
+    return LocalAlias()
+
+
 class PartialFactory:
     """Reached through the class, `configured` is a function generated inside functools."""
 

@@ -61,14 +61,16 @@ def _partial_method_of(func: Any) -> functools.partialmethod | None:
     return None
 
 
-def _unwrap_signature_source(func: Any) -> Any:
-    """Follow the hops :func:`inspect.signature` takes from a callable to its parameters.
+def _signature_chain(func: Any) -> list[Any]:
+    """Every callable :func:`inspect.signature` passes through on its way to the parameters.
 
     Through ``functools.partial`` and ``functools.wraps`` wrappers and the function a
     ``functools.partialmethod`` generates, none of whose modules know anything about the
     wrapped function's names — stopping, as it does, at a callable that declares its own
     ``__signature__``, since the parameters then come from the wrapper rather than from
-    what it wraps.
+    what it wraps. The last link is where the parameters come from; the ones before it
+    still hold what the target was when it was handed over, such as a binding to an
+    instance that the function it decorates knows nothing about.
     """
     # `inspect.unwrap` guards against a circular `__wrapped__` chain and so does the
     # `__signature__` stop below, but a loop that never ends would hang `instantiate()`.
@@ -88,7 +90,12 @@ def _unwrap_signature_source(func: Any) -> Any:
             func = func.__wrapped__
         else:
             break
-    return func
+    return seen
+
+
+def _unwrap_signature_source(func: Any) -> Any:
+    """The callable at the end of the chain — the one that declares the parameters."""
+    return _signature_chain(func)[-1]
 
 
 class _AnnotationSource(NamedTuple):
@@ -155,7 +162,8 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     another module; the object itself keeps no globals and falls back to the module its
     own class came from.
     """
-    func = _unwrap_signature_source(target)
+    chain = _signature_chain(target)
+    func = chain[-1]
     if inspect.isclass(func):
         # Each candidate is paired with the class body it was written in — the one that
         # defines it, which for an inherited method is a base rather than `func` itself.
@@ -167,8 +175,11 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     else:
         # A method was written in a class body too. A bound one names what it is bound to;
         # a static method (or any function reached through its class) has only its
-        # qualified name to say where it came from.
-        bound_to = getattr(func, '__self__', None)
+        # qualified name to say where it came from. The binding can sit anywhere in the
+        # chain rather than at its end — a decorated bound method leads through
+        # `__wrapped__` to the undecorated function, which knows nothing of the instance —
+        # so it is looked for from the target inwards.
+        bound_to = next((link.__self__ for link in chain if hasattr(link, '__self__')), None)
         owner = bound_to if inspect.isclass(bound_to) else type(bound_to) if bound_to is not None else None
         written_in = _defining_class(owner, getattr(func, '__name__', '')) if owner is not None else None
         written_in = written_in if written_in is not None else _owning_class(func)

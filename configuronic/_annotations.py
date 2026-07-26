@@ -175,11 +175,15 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
         # A declared signature outranks all three: it is what `inspect.signature` reports.
         # Being a statement in a class body, the body that binds `__signature__` is where
         # its annotations were written — the class' own body, or its metaclass', which is
-        # where the attribute is found when the class itself does not define one.
-        declared_in = _defining_class(func, '__signature__')
-        declared_in = declared_in if declared_in is not None else _defining_class(type(func), '__signature__')
-        if declared_in is not None:
-            candidates.insert(0, (func, declared_in))
+        # where the attribute is found when the class itself does not define one. Only a
+        # real `Signature` counts, since that is the test `inspect.signature` itself
+        # applies: `__signature__ = None` means the parameters come from the constructor
+        # after all, and answering for them here would be answering in the wrong body.
+        if isinstance(getattr(func, '__signature__', None), inspect.Signature):
+            declared_in = _defining_class(func, '__signature__')
+            declared_in = declared_in if declared_in is not None else _defining_class(type(func), '__signature__')
+            if declared_in is not None:
+                candidates.insert(0, (func, declared_in))
     else:
         # A method was written in a class body too. A bound one names what it is bound to;
         # a static method (or any function reached through its class) has only its

@@ -743,6 +743,18 @@ def test_class_declaring_its_own_signature_resolves_its_class_body_alias():
     assert isinstance(cfg.instantiate().pipeline, cfn.Config)
 
 
+def test_signature_set_to_none_leaves_the_constructor_to_answer():
+    # `inspect.signature` reads `__signature__ = None` as "no explicit signature" and falls
+    # through to the constructor, so the parameters — and the body that wrote them — are
+    # still the base's. This class declares nothing and must not answer for them.
+    class InheritsWithoutDeclaringOne(lazy_annotations.ClassBodyAlias):
+        __signature__ = None
+
+    cfg = cfn.Config(InheritsWithoutDeclaringOne, pipeline=pipeline_cfg)
+
+    assert isinstance(cfg.instantiate().pipeline, cfn.Config)
+
+
 def test_metaclass_declared_signature_resolves_where_the_metaclass_wrote_it():
     # A class that declares no signature of its own gets one through its metaclass, so the
     # annotations belong to the metaclass' body — and to its module, which is not the

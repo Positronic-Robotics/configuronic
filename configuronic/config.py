@@ -315,21 +315,14 @@ def _get_creator_module() -> ModuleType | None:
 _UNRESOLVED = object()
 
 
-def _annotation_namespaces(target: Any) -> list[dict[str, Any]]:
-    """Namespaces a stringified annotation of `target` may have been written in.
+def _unwrap_signature_source(func: Any) -> Any:
+    """Follow the hops :func:`inspect.signature` takes from a callable to its parameters.
 
-    An annotation has to be resolved where it was written, so follow the same hops
-    :func:`inspect.signature` takes to find the parameters: through ``functools.partial``
-    and ``functools.wraps`` wrappers, whose own module knows nothing about the wrapped
-    function's names — stopping, as it does, at a callable that declares its own
-    ``__signature__``, since the parameters then come from the wrapper rather than from
-    what it wraps. For a class, the reported parameters come from a metaclass
-    ``__call__``, from ``__new__`` or from ``__init__``, chosen by rules that vary across
-    Python versions — so offer all three, most specific first, and let the caller take
-    the first that resolves. Callable objects keep no globals of their own and fall back
-    to the module their class came from.
+    Through ``functools.partial`` and ``functools.wraps`` wrappers, whose own module knows
+    nothing about the wrapped function's names — stopping, as it does, at a callable that
+    declares its own ``__signature__``, since the parameters then come from the wrapper
+    rather than from what it wraps.
     """
-    func = target
     # `inspect.unwrap` guards against a circular `__wrapped__` chain and so does the
     # `__signature__` stop below, but a loop that never ends would hang `instantiate()`.
     seen: set[int] = set()
@@ -343,11 +336,26 @@ def _annotation_namespaces(target: Any) -> list[dict[str, Any]]:
             func = func.__wrapped__
         else:
             break
+    return func
 
+
+def _annotation_namespaces(target: Any) -> list[dict[str, Any]]:
+    """Namespaces a stringified annotation of `target` may have been written in.
+
+    An annotation has to be resolved where it was written, so follow the target to the
+    callable that declares the parameters. For a class, the reported parameters come from
+    a metaclass ``__call__``, from ``__new__`` or from ``__init__``, chosen by rules that
+    vary across Python versions — so offer all three, most specific first, and let the
+    caller take the first that resolves. Each of those can be decorated in turn, so each
+    is followed the same way. Callable objects keep no globals of their own and fall back
+    to the module their class came from.
+    """
+    func = _unwrap_signature_source(target)
     sources = [type(func).__call__, func.__new__, func.__init__] if inspect.isclass(func) else [func]
 
     namespaces: list[dict[str, Any]] = []
     for source in sources:
+        source = _unwrap_signature_source(source)
         namespace = getattr(source, '__globals__', None)
         if namespace is None:
             namespace = getattr(inspect.getmodule(source), '__dict__', None)
@@ -453,10 +461,34 @@ def _read_lazy_declaration(target: Any) -> _LazyDeclaration:
     return _LazyDeclaration(tuple(positional), keywords, var_positional, var_keyword)
 
 
+class _TargetKey:
+    """Cache key that compares targets by identity.
+
+    `lru_cache` keys by ``__hash__``/``__eq__``, and a callable object may define either:
+    two targets that compare equal can still report different signatures (a per-instance
+    ``__signature__``, say), and sharing one declaration between them would hand the wrong
+    arguments over unresolved. Keying by identity also means a target that cannot be hashed
+    at all is no special case; holding the target here keeps its id from being reused.
+    """
+
+    __slots__ = ('target',)
+
+    def __init__(self, target: Any):
+        self.target = target
+
+    def __hash__(self) -> int:
+        return id(self.target)
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, _TargetKey) and other.target is self.target
+
+
 # Reading the declaration means inspecting a signature and resolving annotations, which is
 # an order of magnitude more expensive than instantiating a small config. It depends on the
 # target alone, so cache it rather than paying it on every instantiate().
-_lazy_declaration = functools.lru_cache(maxsize=1024)(_read_lazy_declaration)
+@functools.lru_cache(maxsize=1024)
+def _lazy_declaration(key: _TargetKey) -> _LazyDeclaration:
+    return _read_lazy_declaration(key.target)
 
 
 class Config:
@@ -685,12 +717,7 @@ class Config:
         declaration lives in its signature: callers keep writing ordinary values and
         ordinary overrides.
         """
-        try:
-            declaration = _lazy_declaration(self.target)
-        except TypeError:
-            # An unhashable callable (a target instance whose class sets __hash__ = None)
-            # cannot be a cache key. Read its declaration directly.
-            declaration = _read_lazy_declaration(self.target)
+        declaration = _lazy_declaration(_TargetKey(self.target))
 
         positional = declaration.positional
         lazy_args = {

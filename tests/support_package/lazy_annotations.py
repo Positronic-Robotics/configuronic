@@ -10,6 +10,7 @@ from __future__ import annotations
 import configuronic as cfn
 from configuronic import Config
 from configuronic import Config as C
+from tests.support_package import lazy_wrappers
 
 
 class Pipeline:
@@ -60,6 +61,15 @@ def cyclic_alias_spelling(pipeline: CYCLIC_ALIAS):
 class Server:
     """A class target whose `__init__` annotations are postponed too."""
 
+    def __init__(self, pipeline: cfn.Config, host: str = 'localhost'):
+        self.pipeline = pipeline
+        self.host = host
+
+
+class DecoratedInit:
+    """A class whose `__init__` is decorated from a module that knows nothing about `cfn`."""
+
+    @lazy_wrappers.passthrough
     def __init__(self, pipeline: cfn.Config, host: str = 'localhost'):
         self.pipeline = pipeline
         self.host = host

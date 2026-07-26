@@ -195,6 +195,14 @@ def test_postponed_alias_spelling():
     assert isinstance(received, cfn.Config)
 
 
+def test_postponed_annotation_on_a_class_with_a_decorated_init():
+    # `inspect.signature` reports the wrapped `__init__`'s parameters, so the annotation
+    # belongs to the module that wrote it, not to the decorator's.
+    server = cfn.Config(lazy_annotations.DecoratedInit, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
+
+    assert isinstance(server.pipeline, cfn.Config)
+
+
 def test_postponed_annotation_on_a_class_built_by_new():
     factory = cfn.Config(lazy_annotations.Factory, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
 
@@ -490,6 +498,32 @@ def test_unhashable_target_is_handled():
 
     assert isinstance(received, cfn.Config)
     assert isinstance(eager, Pipeline)
+
+
+def test_equal_targets_with_different_signatures_are_not_confused():
+    # The cache is keyed by identity: targets that compare equal can still report
+    # different signatures, and each must get its own declaration.
+    class Server:
+        def __init__(self, lazy: bool):
+            annotation = cfn.Config if lazy else Pipeline
+            self.__signature__ = inspect.Signature([
+                inspect.Parameter('pipeline', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=annotation)
+            ])
+
+        def __call__(self, pipeline):
+            return pipeline
+
+        def __eq__(self, other):
+            return isinstance(other, Server)
+
+        def __hash__(self):
+            return 0
+
+    lazy_target = cfn.Config(Server(lazy=True), pipeline=pipeline_cfg)
+    eager_target = cfn.Config(Server(lazy=False), pipeline=pipeline_cfg)
+
+    assert isinstance(lazy_target.instantiate(), cfn.Config)
+    assert isinstance(eager_target.instantiate(), Pipeline)
 
 
 def test_lazy_parameter_inside_a_nested_config():

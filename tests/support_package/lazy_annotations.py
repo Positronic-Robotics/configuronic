@@ -12,7 +12,7 @@ import functools
 import configuronic as cfn
 from configuronic import Config
 from configuronic import Config as C
-from tests.support_package import lazy_broken_metaclass, lazy_wrappers
+from tests.support_package import lazy_broken_metaclass, lazy_sibling_namespace, lazy_wrappers
 
 
 class Pipeline:
@@ -140,3 +140,11 @@ class BuiltByBrokenMeta(metaclass=lazy_broken_metaclass.BrokenAnnotationMeta):
 
     def __init__(self, other: C):
         self.other = other
+
+
+class BuiltByMetaDeclaringTheSameParameter(metaclass=lazy_sibling_namespace.SameParameterMeta):
+    """Declares `pipeline: C` too — identically to the metaclass that wrote the signature."""
+
+    def __init__(self, pipeline: C, host: str = 'localhost'):
+        self.pipeline = pipeline
+        self.host = host

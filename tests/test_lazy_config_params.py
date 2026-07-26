@@ -315,6 +315,27 @@ def test_annotation_is_not_resolved_in_a_sibling_namespace():
     assert isinstance(received, Pipeline)
 
 
+def test_identical_declaration_in_a_sibling_namespace_does_not_answer():
+    # The metaclass wrote `pipeline: C` and cannot resolve `C`; the class' own `__init__`
+    # declares an identical-looking parameter in a module where `C` *is* Config. Only the
+    # first candidate can be the one the signature came from, so `C` stays unresolved.
+    cfg = cfn.Config(lazy_annotations.BuiltByMetaDeclaringTheSameParameter, pipeline=pipeline_cfg)
+
+    received, _ = cfg.instantiate()
+
+    assert isinstance(received, Pipeline)
+
+
+def test_forward_reference_resolves_in_the_module_it_names():
+    forward = typing.ForwardRef('C', module=lazy_annotations.__name__)
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def via_forward_ref(pipeline: forward):
+        return pipeline
+
+    assert isinstance(via_forward_ref.instantiate(), cfn.Config)
+
+
 def test_postponed_optional_annotation():
     cfg = cfn.Config(lazy_annotations.optional_spelling, pipeline=cfn.Config(lazy_annotations.Pipeline))
 
@@ -354,6 +375,45 @@ def test_annotation_that_cannot_be_resolved_is_not_lazy():
         return pipeline
 
     assert isinstance(unresolvable.instantiate(), Pipeline)
+
+
+def test_annotations_of_parameters_the_config_does_not_set_are_left_alone():
+    # Resolving an annotation evaluates whatever expression was written there. A config
+    # that never sets that parameter has no business causing that.
+    evaluated = []
+
+    class Watched:
+        def __getattr__(self, name):
+            evaluated.append(name)
+            raise AttributeError(name)
+
+    watched = Watched()
+    namespace = {'watched': watched, 'cfn': cfn}
+    exec(  # noqa: S102 - postponed annotations in a module we build here
+        'from __future__ import annotations\n'
+        'def target(untouched: watched.Thing = None, pipeline: cfn.Config = None):\n'
+        '    return pipeline\n',
+        namespace,
+    )
+
+    received = cfn.Config(namespace['target'], pipeline=pipeline_cfg).instantiate()
+
+    assert isinstance(received, cfn.Config)
+    assert evaluated == []
+
+
+def test_introspection_that_raises_does_not_break_instantiate():
+    # A target is free to define `__signature__` however it likes; reading it must not be
+    # what breaks building a config.
+    class Hostile:
+        @property
+        def __signature__(self):
+            raise RuntimeError('signature is not available')
+
+        def __call__(self, pipeline):
+            return pipeline
+
+    assert isinstance(cfn.Config(Hostile(), pipeline=pipeline_cfg).instantiate(), Pipeline)
 
 
 def test_annotation_object_is_never_compared():

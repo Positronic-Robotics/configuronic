@@ -2,6 +2,10 @@
 
 ## [0.7.0] - 2026-07-26
 
+### Changed
+- **Behaviour:** a parameter annotated `cfn.Config` is no longer resolved before the target is called. A target that already had such a parameter and relied on `instantiate()` building the config passed to it now receives the config itself, with no error — both are ordinary values. Annotate the parameter with the type it is built into (or leave it unannotated) to keep the previous behaviour.
+- `override()`, `override_data()` and `Config.__call__()` take `self` positionally, so `self` is usable as an override key. Previously `override_data(**{'self': ...})` — reachable wherever the keys come from outside the process — raised `TypeError` instead of being applied or reported as a `ConfigError`.
+
 ### Added
 - A target parameter annotated `cfn.Config` now receives the stored config itself instead of its instantiation (#38). This covers targets that must build a config later, more than once, or with overrides they only learn at runtime — a server applying per-connection overrides, for instance — which previously forced a hand-rolled dict of configs keyed by string. The declaration lives in the target's signature, so callers keep passing ordinary values: `.override()` (including dotted keys reaching into the config), `--help` and `get_required_args` all keep working on it. `Config | None`, `Optional[Config]`, `Annotated[Config, ...]` and string annotations (`from __future__ import annotations`) are recognised too; a non-config value on such a parameter is passed through untouched, and configs nested in containers (`list[Config]`) still resolve as before.
 

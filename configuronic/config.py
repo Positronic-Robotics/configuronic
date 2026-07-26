@@ -4,6 +4,7 @@ import functools
 import importlib
 import inspect
 import posixpath
+import sys
 from collections import deque
 from collections.abc import Callable, Mapping
 from types import ModuleType, UnionType
@@ -346,9 +347,12 @@ def _unwrap_signature_source(func: Any) -> Any:
     """
     # `inspect.unwrap` guards against a circular `__wrapped__` chain and so does the
     # `__signature__` stop below, but a loop that never ends would hang `instantiate()`.
-    seen: set[int] = set()
-    while id(func) not in seen:
-        seen.add(id(func))
+    # The objects are held, not just their ids: a hop can mint a transient (a bound method,
+    # a partial built by a property), and a freed id is reused straight away — the loop
+    # would then stop at a callable it has never actually seen.
+    seen: list[Any] = []
+    while not any(func is visited for visited in seen):
+        seen.append(func)
         if hasattr(func, '__signature__'):
             break
         elif isinstance(func, functools.partial):
@@ -446,6 +450,7 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
         candidates = [(type(func).__call__, _defining_class(type(func), '__call__')), (func, written_in)]
 
     sources: list[_AnnotationSource] = []
+    seen: list[tuple[dict[str, Any], type | None]] = []
     for candidate, defined_in in candidates:
         candidate = _unwrap_signature_source(candidate)
         globalns = getattr(candidate, '__globals__', None)
@@ -453,9 +458,13 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
             globalns = getattr(inspect.getmodule(candidate), '__dict__', None)
         if not globalns:
             continue
+        # Compare on what the namespaces are *taken from*: `vars()` hands back a new
+        # mappingproxy every call, so comparing the mappings by identity never matches.
+        if any(globalns is known_globals and defined_in is known_class for known_globals, known_class in seen):
+            continue
+        seen.append((globalns, defined_in))
         localns: Mapping[str, Any] = vars(defined_in) if defined_in is not None else {}
-        if not any(globalns is known.globalns and localns is known.localns for known in sources):
-            sources.append(_AnnotationSource(globalns, localns, _declared_parameters(candidate)))
+        sources.append(_AnnotationSource(globalns, localns, _declared_parameters(candidate)))
     return sources
 
 
@@ -476,19 +485,31 @@ def _same_annotation(declared: Any, reported: Any) -> bool:
 def _sources_for(sources: list[_AnnotationSource], param: inspect.Parameter) -> list[_AnnotationSource]:
     """Where this parameter's annotation may be resolved, most likely first.
 
-    Only one of the candidates wrote this parameter, and when that one can be told apart —
-    it declares a parameter of the same name and annotation — its namespace is the only one
-    that applies: a name it cannot resolve is unresolved, not something a sibling namespace
-    happens to define. When none of them declares it (a callable with an explicit
-    ``__signature__``, say) there is nothing to go on, so offer them all.
+    Only one of the candidates wrote this parameter, so the first that declares it — same
+    name, same annotation, candidates being ordered most specific first — is the one whose
+    namespace applies, and a name it cannot resolve is unresolved rather than something a
+    sibling namespace happens to define. Two candidates declaring the identical parameter
+    is not a reason to consult both: only the first can be the one the signature came from.
+    When none of them declares it (a callable with an explicit ``__signature__``, say)
+    there is nothing to go on, so offer them all.
     """
-    declaring = [
-        source
-        for source in sources
-        if (declared := source.parameters.get(param.name)) is not None
-        and _same_annotation(declared.annotation, param.annotation)
-    ]
-    return declaring or sources
+    for source in sources:
+        declared = source.parameters.get(param.name)
+        if declared is not None and _same_annotation(declared.annotation, param.annotation):
+            return [source]
+    return sources
+
+
+def _module_source(module: Any) -> list[_AnnotationSource]:
+    """The namespace of the module a `ForwardRef` names, if it names one.
+
+    The attribute holds whatever was handed to `ForwardRef` — the module, or its name,
+    which is what `typing.get_type_hints` looks up in `sys.modules`.
+    """
+    if isinstance(module, str):
+        module = sys.modules.get(module)
+    namespace = getattr(module, '__dict__', None)
+    return [_AnnotationSource(namespace, {}, {})] if namespace else []
 
 
 def _resolve_string_annotation(annotation: str, sources: list[_AnnotationSource]) -> Any:
@@ -540,7 +561,10 @@ def _is_config_annotation(
             if text in _seen:
                 return False
             _seen = _seen | {text}
-            annotation = _resolve_string_annotation(text, sources)
+            # A `ForwardRef` may name the module it was written in, which is then where it
+            # is resolved — `typing.get_type_hints` honours that, and so does this.
+            declared_in = getattr(annotation, '__forward_module__', None) if annotation is not text else None
+            annotation = _resolve_string_annotation(text, _module_source(declared_in) + sources)
             if annotation is _UNRESOLVED:
                 return False
         elif TypeAliasType is not None and isinstance(annotation, TypeAliasType):
@@ -570,44 +594,72 @@ def _is_config_annotation(
     return False
 
 
-class _LazyDeclaration(NamedTuple):
-    """Which of a target's parameters ask for the `Config` itself, by position and by name.
+class _LazyDeclaration:
+    """Which of a target's parameters ask for the `Config` itself, answered on demand.
 
-    ``positional``/``keywords`` cover the named parameters; ``var_positional``/``var_keyword``
-    apply to anything beyond them, i.e. what ``*args`` / ``**kwargs`` would collect.
+    A parameter's annotation is only resolved when a config actually supplies that
+    parameter. Resolving one means evaluating whatever expression was written there, which
+    can import a module or run code of its own, and a config has no business causing that
+    for parameters it never sets. Answers are remembered, so each parameter costs that at
+    most once per target.
+
+    Reading a signature must never be what breaks `instantiate()`: a target free to define
+    `__signature__`, `__getattr__` or `__class__` however it likes can make introspection
+    raise anything at all, and a parameter we cannot classify is simply not a `Config`
+    parameter.
     """
 
-    positional: tuple[bool, ...]
-    keywords: dict[str, bool]
-    var_positional: bool
-    var_keyword: bool
+    __slots__ = ('_answered', '_keywords', '_positional', '_sources', '_target', '_var_keyword', '_var_positional')
 
+    def __init__(self, target: Any):
+        self._target = target
+        self._sources: list[_AnnotationSource] | None = None
+        self._answered: dict[str, bool] = {}
+        self._positional: list[inspect.Parameter] = []
+        self._keywords: dict[str, inspect.Parameter] = {}
+        self._var_positional: inspect.Parameter | None = None
+        self._var_keyword: inspect.Parameter | None = None
 
-def _read_lazy_declaration(target: Any) -> _LazyDeclaration:
-    """Read `target`'s signature and mark the parameters annotated `Config`."""
-    try:
-        parameters = inspect.signature(target).parameters
-    except (TypeError, ValueError):
-        # Builtins and other C callables often have no introspectable signature. Then
-        # nothing is annotated, so nothing is lazy.
-        return _LazyDeclaration((), {}, False, False)
+        try:
+            parameters = inspect.signature(target).parameters
+        except Exception:
+            # Builtins and other C callables often have no introspectable signature; an
+            # exotic one can raise anything. Then nothing is classified, so nothing is lazy.
+            return
 
-    sources = _annotation_sources(target)
-    positional: list[bool] = []
-    keywords: dict[str, bool] = {}
-    var_positional = var_keyword = False
-    for name, param in parameters.items():
-        is_lazy = _is_config_annotation(param.annotation, _sources_for(sources, param))
-        if param.kind is inspect.Parameter.VAR_POSITIONAL:
-            var_positional = is_lazy
-        elif param.kind is inspect.Parameter.VAR_KEYWORD:
-            var_keyword = is_lazy
-        else:
-            if param.kind is not inspect.Parameter.KEYWORD_ONLY:
-                positional.append(is_lazy)
-            if param.kind is not inspect.Parameter.POSITIONAL_ONLY:
-                keywords[name] = is_lazy
-    return _LazyDeclaration(tuple(positional), keywords, var_positional, var_keyword)
+        for name, param in parameters.items():
+            if param.kind is inspect.Parameter.VAR_POSITIONAL:
+                self._var_positional = param
+            elif param.kind is inspect.Parameter.VAR_KEYWORD:
+                self._var_keyword = param
+            else:
+                if param.kind is not inspect.Parameter.KEYWORD_ONLY:
+                    self._positional.append(param)
+                if param.kind is not inspect.Parameter.POSITIONAL_ONLY:
+                    self._keywords[name] = param
+
+    def positional(self, index: int) -> bool:
+        """Does the parameter filled by positional argument `index` want the config?"""
+        if index < len(self._positional):
+            return self._wants_config(self._positional[index])
+        return self._var_positional is not None and self._wants_config(self._var_positional)
+
+    def keyword(self, name: str) -> bool:
+        """Does the parameter named `name` — or the `**kwargs` collecting it — want it?"""
+        param = self._keywords.get(name, self._var_keyword)
+        return param is not None and self._wants_config(param)
+
+    def _wants_config(self, param: inspect.Parameter) -> bool:
+        answer = self._answered.get(param.name)
+        if answer is None:
+            try:
+                if self._sources is None:
+                    self._sources = _annotation_sources(self._target)
+                answer = _is_config_annotation(param.annotation, _sources_for(self._sources, param))
+            except Exception:
+                answer = False
+            self._answered[param.name] = answer
+        return answer
 
 
 class _TargetKey:
@@ -640,7 +692,7 @@ class _TargetKey:
 # re-reading the signature every time, which is the cost the cache exists to avoid.
 @functools.lru_cache(maxsize=1024)
 def _lazy_declaration(key: _TargetKey) -> _LazyDeclaration:
-    return _read_lazy_declaration(key.target)
+    return _LazyDeclaration(key.target)
 
 
 class Config:
@@ -694,7 +746,7 @@ class Config:
 
         self._creator_module = _get_creator_module()
 
-    def override(self, **overrides) -> Config:
+    def override(self, /, **overrides) -> Config:
         """
         Create a new Config with updated parameters.
 
@@ -755,7 +807,7 @@ class Config:
 
         return overriden_cfg
 
-    def override_data(self, **overrides) -> Config:
+    def override_data(self, /, **overrides) -> Config:
         """
         Like :meth:`override`, but values are interpreted strictly as data.
 
@@ -871,11 +923,8 @@ class Config:
         """
         declaration = _lazy_declaration(_TargetKey(self.target))
 
-        positional = declaration.positional
-        lazy_args = {
-            i for i in range(len(self.args)) if (positional[i] if i < len(positional) else declaration.var_positional)
-        }
-        lazy_kwargs = {key for key in self.kwargs if declaration.keywords.get(key, declaration.var_keyword)}
+        lazy_args = {i for i in range(len(self.args)) if declaration.positional(i)}
+        lazy_kwargs = {key for key in self.kwargs if declaration.keyword(key)}
         return lazy_args, lazy_kwargs
 
     def instantiate(self) -> Any:
@@ -896,6 +945,12 @@ class Config:
         for instance. Everything else about the argument is unchanged: it is an ordinary
         config, so ``.override()`` (including dotted keys reaching into it) and ``--help``
         keep working.
+
+        Such an argument is the one thing here that is *not* built afresh: the target is
+        handed the config held in that slot, the same object on every call, so treat it as
+        read-only and derive from it with ``.override()`` / ``.override_data()``, which
+        copy. That is deliberate — the config is what the target asked for, and copying it
+        on the way past would only be undone by the first override the target applies.
 
         Returns:
             The instantiated target function.
@@ -989,7 +1044,7 @@ class Config:
         cfg._creator_module = self._creator_module
         return cfg
 
-    def __call__(self, **kwargs):
+    def __call__(self, /, **kwargs):
         """
         Override the config with the given kwargs and instantiate the config.
 

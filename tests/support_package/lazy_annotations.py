@@ -7,6 +7,8 @@ parameter wants the ``Config`` itself (issue #38).
 
 from __future__ import annotations
 
+import functools
+
 import configuronic as cfn
 from configuronic import Config
 from configuronic import Config as C
@@ -87,6 +89,15 @@ class ClassBodyAlias:
 
 class InheritsClassBodyAlias(ClassBodyAlias):
     """Inherits the annotated `__init__`; the alias is in the base's body, not this one."""
+
+
+class PartialFactory:
+    """Reached through the class, `configured` is a function generated inside functools."""
+
+    def build(self, extra: str, pipeline: C):
+        return pipeline, extra
+
+    configured = functools.partialmethod(build, 'bound-extra')
 
 
 class CallableBase:

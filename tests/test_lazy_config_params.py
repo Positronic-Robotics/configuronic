@@ -243,6 +243,19 @@ def test_postponed_annotation_using_an_inherited_class_body_alias():
     assert isinstance(cfg.instantiate().pipeline, cfn.Config)
 
 
+def test_partialmethod_target_resolves_the_methods_annotations():
+    # Through the class it is a function generated inside functools, which knows nothing
+    # about the names the real method's annotations use; bound, it is a plain partial.
+    factory = lazy_annotations.PartialFactory()
+
+    unbound, extra = cfn.Config(lazy_annotations.PartialFactory.configured, factory, pipeline_cfg).instantiate()
+    bound, _ = cfn.Config(factory.configured, pipeline_cfg).instantiate()
+
+    assert isinstance(unbound, cfn.Config)
+    assert isinstance(bound, cfn.Config)
+    assert extra == 'bound-extra'
+
+
 def test_static_method_target_resolves_a_class_body_alias():
     # A static method is a plain function with no binding, so only its qualified name says
     # which class body it was written in.

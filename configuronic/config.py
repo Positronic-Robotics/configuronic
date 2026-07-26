@@ -320,13 +320,29 @@ def _get_creator_module() -> ModuleType | None:
 _UNRESOLVED = object()
 
 
+def _partial_method_of(func: Any) -> functools.partialmethod | None:
+    """The `functools.partialmethod` behind an unbound accessor, if this is one.
+
+    Reaching a ``partialmethod`` through its class hands back a plain function generated
+    inside ``functools``, which keeps a reference to the real method — under
+    ``_partialmethod`` up to 3.12 and ``__partialmethod__`` from 3.13. Whichever name it
+    carries, that reference is where its parameters, and their annotations, come from.
+    """
+    for attribute in ('__partialmethod__', '_partialmethod'):
+        candidate = getattr(func, attribute, None)
+        if isinstance(candidate, functools.partialmethod):
+            return candidate
+    return None
+
+
 def _unwrap_signature_source(func: Any) -> Any:
     """Follow the hops :func:`inspect.signature` takes from a callable to its parameters.
 
-    Through ``functools.partial`` and ``functools.wraps`` wrappers, whose own module knows
-    nothing about the wrapped function's names — stopping, as it does, at a callable that
-    declares its own ``__signature__``, since the parameters then come from the wrapper
-    rather than from what it wraps.
+    Through ``functools.partial`` and ``functools.wraps`` wrappers and the function a
+    ``functools.partialmethod`` generates, none of whose modules know anything about the
+    wrapped function's names — stopping, as it does, at a callable that declares its own
+    ``__signature__``, since the parameters then come from the wrapper rather than from
+    what it wraps.
     """
     # `inspect.unwrap` guards against a circular `__wrapped__` chain and so does the
     # `__signature__` stop below, but a loop that never ends would hang `instantiate()`.
@@ -337,6 +353,8 @@ def _unwrap_signature_source(func: Any) -> Any:
             break
         elif isinstance(func, functools.partial):
             func = func.func
+        elif (partial_method := _partial_method_of(func)) is not None:
+            func = partial_method.func
         elif hasattr(func, '__wrapped__'):
             func = func.__wrapped__
         else:

@@ -359,6 +359,14 @@ def _declared_parameters(func: Any) -> dict[str, inspect.Parameter]:
         return {}
 
 
+def _defining_class(cls: type, method: str) -> type | None:
+    """The class in `cls`'s MRO whose body defines `method` — where its annotations live."""
+    for klass in inspect.getmro(cls):
+        if method in vars(klass):
+            return klass
+    return None
+
+
 def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     """Where a stringified annotation of `target` may have been written.
 
@@ -374,10 +382,15 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     """
     func = _unwrap_signature_source(target)
     if inspect.isclass(func):
-        # Each candidate is paired with the class body it was written in.
-        candidates = [(type(func).__call__, type(func)), (func.__new__, func), (func.__init__, func)]
+        # Each candidate is paired with the class body it was written in — the one that
+        # defines it, which for an inherited method is a base rather than `func` itself.
+        candidates = [
+            (type(func).__call__, _defining_class(type(func), '__call__')),
+            (func.__new__, _defining_class(func, '__new__')),
+            (func.__init__, _defining_class(func, '__init__')),
+        ]
     else:
-        candidates = [(type(func).__call__, type(func)), (func, None)]
+        candidates = [(type(func).__call__, _defining_class(type(func), '__call__')), (func, None)]
 
     sources: list[_AnnotationSource] = []
     for candidate, defined_in in candidates:
@@ -393,6 +406,20 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     return sources
 
 
+def _same_annotation(declared: Any, reported: Any) -> bool:
+    """Is this the same annotation, without running whatever `__eq__` it may define?
+
+    An annotation is any object, and comparing two of them can execute arbitrary code — or
+    return something that is not a boolean — while we are only reading a signature. The
+    annotation object itself is carried through to the reported parameter, so identity
+    answers this; the string form gets a real comparison because it is the one case where
+    equal-but-distinct objects are plausible, and comparing two strings is safe.
+    """
+    if declared is reported:
+        return True
+    return isinstance(declared, str) and isinstance(reported, str) and declared == reported
+
+
 def _sources_for(sources: list[_AnnotationSource], param: inspect.Parameter) -> list[_AnnotationSource]:
     """Where this parameter's annotation may be resolved, most likely first.
 
@@ -405,7 +432,8 @@ def _sources_for(sources: list[_AnnotationSource], param: inspect.Parameter) -> 
     declaring = [
         source
         for source in sources
-        if (declared := source.parameters.get(param.name)) is not None and declared.annotation == param.annotation
+        if (declared := source.parameters.get(param.name)) is not None
+        and _same_annotation(declared.annotation, param.annotation)
     ]
     return declaring or sources
 

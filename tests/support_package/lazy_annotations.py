@@ -76,6 +76,10 @@ class ClassBodyAlias:
         self.host = host
 
 
+class InheritsClassBodyAlias(ClassBodyAlias):
+    """Inherits the annotated `__init__`; the alias is in the base's body, not this one."""
+
+
 class CallableBase:
     """A callable base class, subclassed in modules that never heard of the name `C`."""
 

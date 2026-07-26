@@ -233,6 +233,13 @@ def test_postponed_annotation_using_a_class_body_alias():
     assert isinstance(server.pipeline, cfn.Config)
 
 
+def test_postponed_annotation_using_an_inherited_class_body_alias():
+    # The `__init__` is inherited, so the body that binds the alias is the base's.
+    cfg = cfn.Config(lazy_annotations.InheritsClassBodyAlias, pipeline=cfn.Config(lazy_annotations.Pipeline))
+
+    assert isinstance(cfg.instantiate().pipeline, cfn.Config)
+
+
 def test_annotation_is_not_resolved_in_a_sibling_namespace():
     # `pipeline` is written in the metaclass' module and cannot be resolved there. The
     # class' own module binds that name to `Config`, but it did not write the parameter,
@@ -283,6 +290,21 @@ def test_annotation_that_cannot_be_resolved_is_not_lazy():
         return pipeline
 
     assert isinstance(unresolvable.instantiate(), Pipeline)
+
+
+def test_annotation_object_is_never_compared():
+    # An annotation is any object, and reading a signature must not run its `__eq__`.
+    class Hostile:
+        def __eq__(self, other):
+            raise AssertionError('annotations must not be compared')
+
+    hostile = Hostile()
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def annotated_with_an_object(pipeline: hostile):
+        return pipeline
+
+    assert isinstance(annotated_with_an_object.instantiate(), Pipeline)
 
 
 def test_annotation_carrying_metadata_is_not_mistaken_for_annotated():

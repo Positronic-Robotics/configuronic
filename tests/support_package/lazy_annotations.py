@@ -93,6 +93,13 @@ class ClassBodyAlias:
         return pipeline
 
 
+class UnresolvableInit:
+    """Its constructor names something no scope it can see binds — deliberately broken."""
+
+    def __init__(self, pipeline: Alias):  # noqa: F821 - unresolvable here, deliberately
+        self.pipeline = pipeline
+
+
 class PrivateClassBodyAlias:
     """The alias is private, so the class body holds it under a name nothing else uses."""
 

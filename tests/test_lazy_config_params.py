@@ -791,6 +791,16 @@ def test_signature_set_to_none_leaves_the_constructor_to_answer():
     assert isinstance(cfg.instantiate().pipeline, cfn.Config)
 
 
+def test_declared_signature_is_not_outvoted_by_the_constructor_it_replaces():
+    # The class declares `(pipeline: 'Alias')` and inherits an `__init__` declaring the
+    # same parameter with the same text, which resolves to nothing where it was written.
+    # A declared signature is not one candidate among several: it is what
+    # `inspect.signature` reports, so nothing a constructor declares can outvote it.
+    cfg = cfn.Config(lazy_declared_signature.DeclaresOverUnresolvableInit, pipeline=pipeline_cfg)
+
+    assert isinstance(cfg.instantiate().pipeline, cfn.Config)
+
+
 def test_metaclass_declared_signature_resolves_where_the_metaclass_wrote_it():
     # A class that declares no signature of its own gets one through its metaclass, so the
     # annotations belong to the metaclass' body — and to its module, which is not the

@@ -9,7 +9,7 @@ import functools
 import inspect
 
 from configuronic import Config as C
-from tests.support_package import lazy_signature_metaclass
+from tests.support_package import lazy_annotations, lazy_signature_metaclass
 
 
 def with_declared_signature(func):
@@ -56,3 +56,18 @@ class BuiltByMetaclassDeclaringInItsBody(TakesAPipeline, metaclass=lazy_signatur
 
 class BuiltByMetaclassDeclaringFromItsModule(TakesAPipeline, metaclass=lazy_signature_metaclass.DeclaresFromItsModule):
     """The same, with the name bound at module level beside the metaclass."""
+
+
+class DeclaresOverUnresolvableInit(lazy_annotations.UnresolvableInit):
+    """Declares its own signature, and inherits an `__init__` declaring the same thing.
+
+    The inherited constructor spells `pipeline: Alias` where nothing binds `Alias`; this
+    body does bind it. Only one of the two is what `inspect.signature` reports, and it is
+    not the constructor.
+    """
+
+    Alias = C
+
+    __signature__ = inspect.Signature([
+        inspect.Parameter('pipeline', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation='Alias')
+    ])

@@ -192,7 +192,7 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     """
     chain = _signature_chain(target)
     func = chain[-1]
-    # Only a class has rival declarations: one of its four candidates supplied the
+    # Only a class can have rival declarations: one of its candidates supplied the
     # signature and the others did not. The two a non-class target offers are the same
     # declaration reached differently.
     rivals = inspect.isclass(func)
@@ -204,11 +204,13 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
             (func.__new__, _defining_class(func, '__new__')),
             (func.__init__, _defining_class(func, '__init__')),
         ]
-        # A declared signature outranks all three: it is what `inspect.signature` reports.
-        # Being a statement in a class body, the body that binds `__signature__` is where
-        # its annotations were written — the class' own body, or its metaclass', which is
-        # where the attribute is found when the class itself does not define one. Only a
-        # real `Signature` counts, since that is the test `inspect.signature` itself
+        # A declared signature does not outrank the other three so much as end the question:
+        # `inspect.signature` reports it, and nothing about what a constructor declares can
+        # change that. So it goes first and the rivalry is over — the rest stay only as
+        # namespaces to fall back on. Being a statement in a class body, the body that binds
+        # `__signature__` is where its annotations were written: the class' own body, or its
+        # metaclass', which is where the attribute is found when the class defines none.
+        # Only a real `Signature` counts, since that is the test `inspect.signature` itself
         # applies: `__signature__ = None` means the parameters come from the constructor
         # after all, and answering for them here would be answering in the wrong body.
         if isinstance(getattr(func, '__signature__', None), inspect.Signature):
@@ -216,6 +218,7 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
             declared_in = declared_in if declared_in is not None else _defining_class(type(func), '__signature__')
             if declared_in is not None:
                 candidates.insert(0, (func, declared_in))
+                rivals = False
     else:
         # A method was written in a class body too. A bound one names what it is bound to;
         # a static method (or any function reached through its class) has only its

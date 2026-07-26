@@ -185,6 +185,30 @@ def test_postponed_annotation_on_a_class_target():
     assert isinstance(server.pipeline.instantiate(), lazy_annotations.Pipeline)
 
 
+def test_postponed_alias_spelling():
+    # `from configuronic import Config as C`: the annotation reads 'C', so only evaluating
+    # it — rather than pattern-matching the source text — can tell what it means.
+    cfg = cfn.Config(lazy_annotations.alias_spelling, pipeline=cfn.Config(lazy_annotations.Pipeline))
+
+    received, _ = cfg.instantiate()
+
+    assert isinstance(received, cfn.Config)
+
+
+def test_postponed_annotation_on_a_class_built_by_new():
+    factory = cfn.Config(lazy_annotations.Factory, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
+
+    assert isinstance(factory.pipeline, cfn.Config)
+    assert isinstance(factory.pipeline.instantiate(), lazy_annotations.Pipeline)
+
+
+def test_postponed_annotation_on_a_class_built_by_a_metaclass():
+    received, host = cfn.Config(lazy_annotations.Built, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
+
+    assert isinstance(received, cfn.Config)
+    assert host == 'localhost'
+
+
 def test_postponed_optional_annotation():
     cfg = cfn.Config(lazy_annotations.optional_spelling, pipeline=cfn.Config(lazy_annotations.Pipeline))
 

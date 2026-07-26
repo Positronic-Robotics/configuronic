@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import configuronic as cfn
 from configuronic import Config
+from configuronic import Config as C
 
 
 class Pipeline:
@@ -26,6 +27,11 @@ def bare_spelling(pipeline: Config, host: str = 'localhost'):
 
 def quoted_spelling(pipeline: 'cfn.Config', host: str = 'localhost'):  # noqa: UP037 - the redundant quotes are the point
     """Quoted *and* postponed: the annotation is stored as the text ``"'cfn.Config'"``."""
+    return pipeline, host
+
+
+def alias_spelling(pipeline: C, host: str = 'localhost'):
+    """The class under a local alias: nothing about the annotation says "Config"."""
     return pipeline, host
 
 
@@ -48,3 +54,22 @@ class Server:
     def __init__(self, pipeline: cfn.Config, host: str = 'localhost'):
         self.pipeline = pipeline
         self.host = host
+
+
+class Factory:
+    """A class whose signature comes from `__new__`; its `__init__` is `object.__init__`."""
+
+    def __new__(cls, pipeline: cfn.Config, host: str = 'localhost'):
+        instance = super().__new__(cls)
+        instance.pipeline = pipeline
+        instance.host = host
+        return instance
+
+
+class Building(type):
+    def __call__(cls, pipeline: cfn.Config, host: str = 'localhost'):
+        return pipeline, host
+
+
+class Built(metaclass=Building):
+    """A class whose signature comes from its metaclass' `__call__`."""

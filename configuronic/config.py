@@ -312,14 +312,20 @@ def _get_creator_module() -> ModuleType | None:
     return module
 
 
-def _annotation_namespace(target: Any) -> dict[str, Any]:
-    """Namespace a stringified annotation of `target` should be evaluated in.
+_UNRESOLVED = object()
+
+
+def _annotation_namespaces(target: Any) -> list[dict[str, Any]]:
+    """Namespaces a stringified annotation of `target` may have been written in.
 
     An annotation has to be resolved where it was written, so follow the same hops
     :func:`inspect.signature` takes to find the parameters: through ``functools.partial``
-    and ``functools.wraps`` wrappers (whose own module knows nothing about the wrapped
-    function's names), and into ``__init__`` for a class. Callable objects keep no
-    globals of their own and fall back to the module their class came from.
+    and ``functools.wraps`` wrappers, whose own module knows nothing about the wrapped
+    function's names. For a class, the reported parameters come from a metaclass
+    ``__call__``, from ``__new__`` or from ``__init__``, chosen by rules that vary across
+    Python versions — so offer all three, most specific first, and let the caller take
+    the first that resolves. Callable objects keep no globals of their own and fall back
+    to the module their class came from.
     """
     func = target
     seen: set[int] = set()  # a `__wrapped__` chain can be circular; `inspect.unwrap` guards too
@@ -327,17 +333,31 @@ def _annotation_namespace(target: Any) -> dict[str, Any]:
         seen.add(id(func))
         if isinstance(func, functools.partial):
             func = func.func
-        elif inspect.isclass(func):
-            func = func.__init__
-        elif hasattr(func, '__wrapped__'):
+        elif not inspect.isclass(func) and hasattr(func, '__wrapped__'):
             func = func.__wrapped__
         else:
             break
 
-    namespace = getattr(func, '__globals__', None)
-    if namespace is None:
-        namespace = getattr(inspect.getmodule(func), '__dict__', None)
-    return namespace or {}
+    sources = [type(func).__call__, func.__new__, func.__init__] if inspect.isclass(func) else [func]
+
+    namespaces: list[dict[str, Any]] = []
+    for source in sources:
+        namespace = getattr(source, '__globals__', None)
+        if namespace is None:
+            namespace = getattr(inspect.getmodule(source), '__dict__', None)
+        if namespace and not any(namespace is known for known in namespaces):
+            namespaces.append(namespace)
+    return namespaces
+
+
+def _resolve_string_annotation(annotation: str, target: Any) -> Any:
+    """Evaluate a stringified annotation, or return `_UNRESOLVED` if no namespace can."""
+    for namespace in _annotation_namespaces(target):
+        try:
+            return eval(annotation, namespace)
+        except Exception:
+            continue
+    return _UNRESOLVED
 
 
 def _is_config_annotation(annotation: Any, target: Any) -> bool:
@@ -356,16 +376,13 @@ def _is_config_annotation(annotation: Any, target: Any) -> bool:
 
     if isinstance(annotation, str):
         # Under `from __future__ import annotations` (or when the annotation is quoted) we
-        # get source text such as 'cfn.Config'. Evaluate it in the target's own namespace —
-        # what `typing.get_type_hints` does, but one parameter at a time, so an unresolvable
-        # forward reference on an unrelated parameter cannot hide a perfectly good annotation
-        # here. The name check keeps unrelated annotations from being evaluated (and their
-        # modules imported) on every instantiate().
-        if Config.__name__ not in annotation:
-            return False
-        try:
-            resolved = eval(annotation, _annotation_namespace(target))
-        except Exception:
+        # get source text such as 'cfn.Config'. Evaluate it where it was written — what
+        # `typing.get_type_hints` does, but one parameter at a time, so an unresolvable
+        # forward reference on an unrelated parameter cannot hide a perfectly good
+        # annotation here. The decision is then made on the object, so every spelling
+        # works, including an alias (`from configuronic import Config as C`).
+        resolved = _resolve_string_annotation(annotation, target)
+        if resolved is _UNRESOLVED:
             return False
         if isinstance(resolved, str):
             # A quoted annotation in a module that also postpones evaluation is stored as

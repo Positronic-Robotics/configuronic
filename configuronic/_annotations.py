@@ -158,10 +158,9 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     ``__init__``, by rules that depend on which of them the class defines itself — so
     offer them all, most specific first, along with what each declares, and let
     :func:`_sources_for` pick. Each can be decorated in turn, so each is followed the same
-    way. For a callable object the
-    parameters come from its class' ``__call__``, which may be inherited from a base in
-    another module; the object itself keeps no globals and falls back to the module its
-    own class came from.
+    way. For a callable object the parameters come from its class' ``__call__``, which may
+    be inherited from a base in another module; the object itself keeps no globals and
+    falls back to the module its own class came from.
     """
     chain = _signature_chain(target)
     func = chain[-1]

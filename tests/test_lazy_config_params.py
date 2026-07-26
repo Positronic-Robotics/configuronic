@@ -225,6 +225,14 @@ def test_cyclic_alias_spelling_is_not_lazy():
     assert isinstance(cfg.instantiate(), lazy_annotations.Pipeline)
 
 
+def test_postponed_annotation_using_a_class_body_alias():
+    # The name is bound in the class body, so it is in scope where the annotation was
+    # written — as it plainly is when the module does not postpone evaluation.
+    server = cfn.Config(lazy_annotations.ClassBodyAlias, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
+
+    assert isinstance(server.pipeline, cfn.Config)
+
+
 def test_annotation_is_not_resolved_in_a_sibling_namespace():
     # `pipeline` is written in the metaclass' module and cannot be resolved there. The
     # class' own module binds that name to `Config`, but it did not write the parameter,

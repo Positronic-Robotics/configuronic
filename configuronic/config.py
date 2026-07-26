@@ -5,7 +5,7 @@ import importlib
 import inspect
 import posixpath
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from types import ModuleType, UnionType
 from typing import Annotated, Any, ForwardRef, NamedTuple, Union, get_args, get_origin
 
@@ -340,9 +340,15 @@ def _unwrap_signature_source(func: Any) -> Any:
 
 
 class _AnnotationSource(NamedTuple):
-    """A namespace an annotation may have been written in, and what its callable declares."""
+    """A namespace an annotation may have been written in, and what its callable declares.
 
-    namespace: dict[str, Any]
+    ``localns`` is the body of the class the callable was defined in, if any: a name bound
+    there is in scope for an annotation written there, which is how the same annotation
+    resolves in a module that does *not* postpone evaluation.
+    """
+
+    globalns: dict[str, Any]
+    localns: Mapping[str, Any]
     parameters: dict[str, inspect.Parameter]
 
 
@@ -360,7 +366,7 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     callable that declares the parameters. For a class, the reported parameters come from
     a metaclass ``__call__``, from ``__new__`` or from ``__init__``, by rules that depend
     on which of them the class defines itself — so offer all three, most specific first,
-    along with what each declares, and let :func:`_namespaces_for` pick. Each can be
+    along with what each declares, and let :func:`_sources_for` pick. Each can be
     decorated in turn, so each is followed the same way. For a callable object the
     parameters come from its class' ``__call__``, which may be inherited from a base in
     another module; the object itself keeps no globals and falls back to the module its
@@ -368,23 +374,27 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     """
     func = _unwrap_signature_source(target)
     if inspect.isclass(func):
-        candidates = [type(func).__call__, func.__new__, func.__init__]
+        # Each candidate is paired with the class body it was written in.
+        candidates = [(type(func).__call__, type(func)), (func.__new__, func), (func.__init__, func)]
     else:
-        candidates = [type(func).__call__, func]
+        candidates = [(type(func).__call__, type(func)), (func, None)]
 
     sources: list[_AnnotationSource] = []
-    for candidate in candidates:
+    for candidate, defined_in in candidates:
         candidate = _unwrap_signature_source(candidate)
-        namespace = getattr(candidate, '__globals__', None)
-        if namespace is None:
-            namespace = getattr(inspect.getmodule(candidate), '__dict__', None)
-        if namespace and not any(namespace is known.namespace for known in sources):
-            sources.append(_AnnotationSource(namespace, _declared_parameters(candidate)))
+        globalns = getattr(candidate, '__globals__', None)
+        if globalns is None:
+            globalns = getattr(inspect.getmodule(candidate), '__dict__', None)
+        if not globalns:
+            continue
+        localns: Mapping[str, Any] = vars(defined_in) if defined_in is not None else {}
+        if not any(globalns is known.globalns and localns is known.localns for known in sources):
+            sources.append(_AnnotationSource(globalns, localns, _declared_parameters(candidate)))
     return sources
 
 
-def _namespaces_for(sources: list[_AnnotationSource], param: inspect.Parameter) -> list[dict[str, Any]]:
-    """Namespaces this parameter's annotation may be resolved in, most likely first.
+def _sources_for(sources: list[_AnnotationSource], param: inspect.Parameter) -> list[_AnnotationSource]:
+    """Where this parameter's annotation may be resolved, most likely first.
 
     Only one of the candidates wrote this parameter, and when that one can be told apart —
     it declares a parameter of the same name and annotation — its namespace is the only one
@@ -393,25 +403,25 @@ def _namespaces_for(sources: list[_AnnotationSource], param: inspect.Parameter) 
     ``__signature__``, say) there is nothing to go on, so offer them all.
     """
     declaring = [
-        source.namespace
+        source
         for source in sources
         if (declared := source.parameters.get(param.name)) is not None and declared.annotation == param.annotation
     ]
-    return declaring or [source.namespace for source in sources]
+    return declaring or sources
 
 
-def _resolve_string_annotation(annotation: str, namespaces: list[dict[str, Any]]) -> Any:
+def _resolve_string_annotation(annotation: str, sources: list[_AnnotationSource]) -> Any:
     """Evaluate a stringified annotation, or return `_UNRESOLVED` if no namespace can."""
-    for namespace in namespaces:
+    for source in sources:
         try:
-            return eval(annotation, namespace)
+            return eval(annotation, source.globalns, source.localns)
         except Exception:
             continue
     return _UNRESOLVED
 
 
 def _is_config_annotation(
-    annotation: Any, namespaces: list[dict[str, Any]], _resolved_text: frozenset[str] = frozenset()
+    annotation: Any, sources: list[_AnnotationSource], _resolved_text: frozenset[str] = frozenset()
 ) -> bool:
     """Does this parameter annotation ask for the `Config` itself?
 
@@ -420,8 +430,8 @@ def _is_config_annotation(
     (``list[Config]``) are deliberately excluded: only a whole argument can be handed
     over unresolved, not selected items inside one.
 
-    ``namespaces`` are where a stringified annotation may be resolved, from
-    :func:`_namespaces_for`. ``_resolved_text`` carries the annotation strings already
+    ``sources`` are where a stringified annotation may be resolved, from
+    :func:`_sources_for`. ``_resolved_text`` carries the annotation strings already
     resolved on the way here, so that names defined in terms of each other cannot loop.
     """
     if annotation is inspect.Parameter.empty:
@@ -444,7 +454,7 @@ def _is_config_annotation(
         if text in _resolved_text:
             return False
         _resolved_text = _resolved_text | {text}
-        annotation = _resolve_string_annotation(text, namespaces)
+        annotation = _resolve_string_annotation(text, sources)
         if annotation is _UNRESOLVED:
             return False
 
@@ -453,13 +463,13 @@ def _is_config_annotation(
     origin = get_origin(annotation)
 
     if origin is Annotated:  # Annotated[Config, ...]
-        return _is_config_annotation(annotation.__origin__, namespaces, _resolved_text)
+        return _is_config_annotation(annotation.__origin__, sources, _resolved_text)
 
     if annotation is Config:
         return True
 
     if origin is Union or origin is UnionType:
-        return any(_is_config_annotation(arg, namespaces, _resolved_text) for arg in get_args(annotation))
+        return any(_is_config_annotation(arg, sources, _resolved_text) for arg in get_args(annotation))
 
     return False
 
@@ -491,7 +501,7 @@ def _read_lazy_declaration(target: Any) -> _LazyDeclaration:
     keywords: dict[str, bool] = {}
     var_positional = var_keyword = False
     for name, param in parameters.items():
-        is_lazy = _is_config_annotation(param.annotation, _namespaces_for(sources, param))
+        is_lazy = _is_config_annotation(param.annotation, _sources_for(sources, param))
         if param.kind is inspect.Parameter.VAR_POSITIONAL:
             var_positional = is_lazy
         elif param.kind is inspect.Parameter.VAR_KEYWORD:

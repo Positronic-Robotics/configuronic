@@ -66,6 +66,16 @@ class Server:
         self.host = host
 
 
+class ClassBodyAlias:
+    """The alias is bound in the class body, which is where the annotation was written."""
+
+    Alias = cfn.Config
+
+    def __init__(self, pipeline: Alias, host: str = 'localhost'):
+        self.pipeline = pipeline
+        self.host = host
+
+
 class CallableBase:
     """A callable base class, subclassed in modules that never heard of the name `C`."""
 

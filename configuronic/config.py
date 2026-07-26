@@ -11,6 +11,11 @@ from typing import Annotated, Any, ForwardRef, NamedTuple, Union, get_args, get_
 
 import yaml
 
+try:  # `type X = ...` aliases (PEP 695), Python 3.12+
+    from typing import TypeAliasType
+except ImportError:  # pragma: no cover - exercised on 3.10 and 3.11
+    TypeAliasType = None
+
 INSTANTIATE_PREFIX = '@'
 RELATIVE_PATH_PREFIX = '.'
 
@@ -390,7 +395,12 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
             (func.__init__, _defining_class(func, '__init__')),
         ]
     else:
-        candidates = [(type(func).__call__, _defining_class(type(func), '__call__')), (func, None)]
+        # A bound method was written in a class body too — the one that defines it, found
+        # from the instance or class it is bound to.
+        bound_to = getattr(func, '__self__', None)
+        owner = bound_to if inspect.isclass(bound_to) else type(bound_to) if bound_to is not None else None
+        written_in = _defining_class(owner, getattr(func, '__name__', '')) if owner is not None else None
+        candidates = [(type(func).__call__, _defining_class(type(func), '__call__')), (func, written_in)]
 
     sources: list[_AnnotationSource] = []
     for candidate, defined_in in candidates:
@@ -449,18 +459,19 @@ def _resolve_string_annotation(annotation: str, sources: list[_AnnotationSource]
 
 
 def _is_config_annotation(
-    annotation: Any, sources: list[_AnnotationSource], _resolved_text: frozenset[str] = frozenset()
+    annotation: Any, sources: list[_AnnotationSource], _seen: frozenset[str | int] = frozenset()
 ) -> bool:
     """Does this parameter annotation ask for the `Config` itself?
 
     True for a bare :class:`Config` and for a union that contains it (``Config | None``),
-    in either case optionally wrapped in ``Annotated``. Containers of configs
-    (``list[Config]``) are deliberately excluded: only a whole argument can be handed
-    over unresolved, not selected items inside one.
+    in either case optionally wrapped in ``Annotated`` or reached through a ``type`` alias.
+    Containers of configs (``list[Config]``) are deliberately excluded: only a whole
+    argument can be handed over unresolved, not selected items inside one.
 
     ``sources`` are where a stringified annotation may be resolved, from
-    :func:`_sources_for`. ``_resolved_text`` carries the annotation strings already
-    resolved on the way here, so that names defined in terms of each other cannot loop.
+    :func:`_sources_for`. ``_seen`` carries what has already been followed on the way here
+    — annotation strings, and the identities of ``type`` aliases — because either can be
+    written in terms of itself, and nothing that comes round again is a ``Config``.
     """
     if annotation is inspect.Parameter.empty:
         return False
@@ -477,27 +488,41 @@ def _is_config_annotation(
     # `pipeline: 'cfn.Config'` arrives as "'cfn.Config'". Keep going until it is not a
     # string any more — but never revisit one, since module-level names can be defined in
     # terms of each other (`A = 'B'`, `B = 'A'`), and no cycle of them is a Config.
-    while isinstance(annotation, ForwardRef | str):
-        text = annotation.__forward_arg__ if isinstance(annotation, ForwardRef) else annotation
-        if text in _resolved_text:
-            return False
-        _resolved_text = _resolved_text | {text}
-        annotation = _resolve_string_annotation(text, sources)
-        if annotation is _UNRESOLVED:
-            return False
+    #
+    # A `type X = ...` alias (PEP 695) hides what it stands for behind `__value__`, which is
+    # evaluated on access and may be the alias itself, so it is followed the same way.
+    while True:
+        if isinstance(annotation, ForwardRef | str):
+            text = annotation.__forward_arg__ if isinstance(annotation, ForwardRef) else annotation
+            if text in _seen:
+                return False
+            _seen = _seen | {text}
+            annotation = _resolve_string_annotation(text, sources)
+            if annotation is _UNRESOLVED:
+                return False
+        elif TypeAliasType is not None and isinstance(annotation, TypeAliasType):
+            if id(annotation) in _seen:
+                return False
+            _seen = _seen | {id(annotation)}
+            try:
+                annotation = annotation.__value__
+            except Exception:
+                return False
+        else:
+            break
 
     # An annotation can be any object, so ask typing what this one is rather than reading
     # attributes off it: something unrelated carrying a `__metadata__` is not `Annotated`.
     origin = get_origin(annotation)
 
     if origin is Annotated:  # Annotated[Config, ...]
-        return _is_config_annotation(annotation.__origin__, sources, _resolved_text)
+        return _is_config_annotation(annotation.__origin__, sources, _seen)
 
     if annotation is Config:
         return True
 
     if origin is Union or origin is UnionType:
-        return any(_is_config_annotation(arg, sources, _resolved_text) for arg in get_args(annotation))
+        return any(_is_config_annotation(arg, sources, _seen) for arg in get_args(annotation))
 
     return False
 

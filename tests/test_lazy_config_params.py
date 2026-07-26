@@ -8,7 +8,10 @@ and traversal keep working.
 
 import functools
 import inspect
+import typing
 from typing import Annotated, Optional
+
+import pytest
 
 import configuronic as cfn
 from tests.support_package import lazy_annotations, lazy_declared_signature, lazy_wrappers
@@ -238,6 +241,46 @@ def test_postponed_annotation_using_an_inherited_class_body_alias():
     cfg = cfn.Config(lazy_annotations.InheritsClassBodyAlias, pipeline=cfn.Config(lazy_annotations.Pipeline))
 
     assert isinstance(cfg.instantiate().pipeline, cfn.Config)
+
+
+def test_bound_method_target_resolves_a_class_body_alias():
+    holder = lazy_annotations.ClassBodyAlias(pipeline=None)
+
+    cfg = cfn.Config(holder.build, pipeline=cfn.Config(lazy_annotations.Pipeline))
+
+    assert isinstance(cfg.instantiate(), cfn.Config)
+
+
+@pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
+def test_type_alias_is_followed():
+    deferred = typing.TypeAliasType('Deferred', cfn.Config)
+    maybe_deferred = typing.TypeAliasType('MaybeDeferred', cfn.Config | None)
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def via_alias(pipeline: deferred):
+        return pipeline
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def via_optional_alias(pipeline: maybe_deferred):
+        return pipeline
+
+    assert isinstance(via_alias.instantiate(), cfn.Config)
+    assert isinstance(via_optional_alias.instantiate(), cfn.Config)
+
+
+@pytest.mark.skipif(not hasattr(typing, 'TypeAliasType'), reason='`type X = ...` aliases are 3.12+')
+def test_self_referential_type_alias_is_not_lazy():
+    # `type SelfRef = SelfRef` evaluates to itself; following it must stop, not recurse.
+    # Written through exec so the 3.12 syntax never reaches the parser on older versions.
+    namespace: dict = {}
+    exec('type SelfRef = SelfRef', namespace)  # noqa: S102 - the point is the 3.12-only syntax
+    self_referential = namespace['SelfRef']
+
+    @cfn.config(pipeline=pipeline_cfg)
+    def via_self_reference(pipeline: self_referential):
+        return pipeline
+
+    assert isinstance(via_self_reference.instantiate(), Pipeline)
 
 
 def test_annotation_is_not_resolved_in_a_sibling_namespace():

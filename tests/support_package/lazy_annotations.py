@@ -75,6 +75,10 @@ class ClassBodyAlias:
         self.pipeline = pipeline
         self.host = host
 
+    def build(self, pipeline: Alias):
+        """A bound method target — the alias is in this class body too."""
+        return pipeline
+
 
 class InheritsClassBodyAlias(ClassBodyAlias):
     """Inherits the annotated `__init__`; the alias is in the base's body, not this one."""

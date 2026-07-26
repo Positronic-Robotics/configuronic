@@ -321,19 +321,25 @@ def _annotation_namespaces(target: Any) -> list[dict[str, Any]]:
     An annotation has to be resolved where it was written, so follow the same hops
     :func:`inspect.signature` takes to find the parameters: through ``functools.partial``
     and ``functools.wraps`` wrappers, whose own module knows nothing about the wrapped
-    function's names. For a class, the reported parameters come from a metaclass
+    function's names — stopping, as it does, at a callable that declares its own
+    ``__signature__``, since the parameters then come from the wrapper rather than from
+    what it wraps. For a class, the reported parameters come from a metaclass
     ``__call__``, from ``__new__`` or from ``__init__``, chosen by rules that vary across
     Python versions — so offer all three, most specific first, and let the caller take
     the first that resolves. Callable objects keep no globals of their own and fall back
     to the module their class came from.
     """
     func = target
-    seen: set[int] = set()  # a `__wrapped__` chain can be circular; `inspect.unwrap` guards too
+    # `inspect.unwrap` guards against a circular `__wrapped__` chain and so does the
+    # `__signature__` stop below, but a loop that never ends would hang `instantiate()`.
+    seen: set[int] = set()
     while id(func) not in seen:
         seen.add(id(func))
-        if isinstance(func, functools.partial):
+        if hasattr(func, '__signature__'):
+            break
+        elif isinstance(func, functools.partial):
             func = func.func
-        elif not inspect.isclass(func) and hasattr(func, '__wrapped__'):
+        elif hasattr(func, '__wrapped__'):
             func = func.__wrapped__
         else:
             break
@@ -360,48 +366,50 @@ def _resolve_string_annotation(annotation: str, target: Any) -> Any:
     return _UNRESOLVED
 
 
-def _is_config_annotation(annotation: Any, target: Any) -> bool:
+def _is_config_annotation(annotation: Any, target: Any, _resolved_text: frozenset[str] = frozenset()) -> bool:
     """Does this parameter annotation ask for the `Config` itself?
 
     True for a bare :class:`Config` and for a union that contains it (``Config | None``),
     in either case optionally wrapped in ``Annotated``. Containers of configs
     (``list[Config]``) are deliberately excluded: only a whole argument can be handed
     over unresolved, not selected items inside one.
+
+    ``_resolved_text`` carries the annotation strings already resolved on the way here, so
+    that names defined in terms of each other cannot loop.
     """
     if annotation is inspect.Parameter.empty:
         return False
 
-    if isinstance(annotation, ForwardRef):
-        annotation = annotation.__forward_arg__
-
-    if isinstance(annotation, str):
-        # Under `from __future__ import annotations` (or when the annotation is quoted) we
-        # get source text such as 'cfn.Config'. Evaluate it where it was written — what
-        # `typing.get_type_hints` does, but one parameter at a time, so an unresolvable
-        # forward reference on an unrelated parameter cannot hide a perfectly good
-        # annotation here. The decision is then made on the object, so every spelling
-        # works, including an alias (`from configuronic import Config as C`).
-        resolved = _resolve_string_annotation(annotation, target)
-        if resolved is _UNRESOLVED:
+    # Under `from __future__ import annotations` (or when the annotation is quoted) we get
+    # source text such as 'cfn.Config'. Evaluate it where it was written — what
+    # `typing.get_type_hints` does, but one parameter at a time, so an unresolvable forward
+    # reference on an unrelated parameter cannot hide a perfectly good annotation here. The
+    # decision is then made on the object, so every spelling works, including an alias
+    # (`from configuronic import Config as C`).
+    #
+    # Resolving can yield another string: a quoted annotation in a module that also
+    # postpones evaluation is stored as the *source text* of the quoted expression, so
+    # `pipeline: 'cfn.Config'` arrives as "'cfn.Config'". Keep going until it is not a
+    # string any more — but never revisit one, since module-level names can be defined in
+    # terms of each other (`A = 'B'`, `B = 'A'`), and no cycle of them is a Config.
+    while isinstance(annotation, ForwardRef | str):
+        text = annotation.__forward_arg__ if isinstance(annotation, ForwardRef) else annotation
+        if text in _resolved_text:
             return False
-        if isinstance(resolved, str):
-            # A quoted annotation in a module that also postpones evaluation is stored as
-            # the *source text* of the quoted expression: `pipeline: 'cfn.Config'` arrives
-            # as "'cfn.Config'" and evaluates to a string that still has to be resolved.
-            # Each round strips one layer of quoting, so this terminates; the equality
-            # check is the belt to that braces.
-            return resolved != annotation and _is_config_annotation(resolved, target)
-        annotation = resolved
+        _resolved_text = _resolved_text | {text}
+        annotation = _resolve_string_annotation(text, target)
+        if annotation is _UNRESOLVED:
+            return False
 
     if hasattr(annotation, '__metadata__'):  # Annotated[Config, ...]
-        return _is_config_annotation(annotation.__origin__, target)
+        return _is_config_annotation(annotation.__origin__, target, _resolved_text)
 
     if annotation is Config:
         return True
 
     origin = get_origin(annotation)
     if origin is Union or origin is UnionType:
-        return any(_is_config_annotation(arg, target) for arg in get_args(annotation))
+        return any(_is_config_annotation(arg, target, _resolved_text) for arg in get_args(annotation))
 
     return False
 

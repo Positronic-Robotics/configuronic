@@ -11,7 +11,7 @@ import inspect
 from typing import Annotated, Optional
 
 import configuronic as cfn
-from tests.support_package import lazy_annotations, lazy_wrappers
+from tests.support_package import lazy_annotations, lazy_declared_signature, lazy_wrappers
 
 
 class Codec:
@@ -207,6 +207,14 @@ def test_postponed_annotation_on_a_class_built_by_a_metaclass():
 
     assert isinstance(received, cfn.Config)
     assert host == 'localhost'
+
+
+def test_cyclic_alias_spelling_is_not_lazy():
+    # Module-level names defined in terms of each other resolve to each other forever.
+    # No such cycle is a Config, and finding that out must not blow the stack.
+    cfg = cfn.Config(lazy_annotations.cyclic_alias_spelling, pipeline=cfn.Config(lazy_annotations.Pipeline))
+
+    assert isinstance(cfg.instantiate(), lazy_annotations.Pipeline)
 
 
 def test_postponed_optional_annotation():
@@ -447,6 +455,14 @@ def test_wraps_decorated_target_resolves_the_wrapped_functions_annotations():
     received, _ = cfn.Config(target, pipeline=cfn.Config(lazy_annotations.Pipeline)).instantiate()
 
     assert isinstance(received, cfn.Config)
+
+
+def test_declared_signature_wins_over_the_wrapped_function():
+    # `inspect.signature` stops at a `__signature__`, so the parameters — and the names
+    # their annotations use — belong to the wrapper, not to what it wraps.
+    target = lazy_declared_signature.with_declared_signature(lazy_wrappers.echo)
+
+    assert isinstance(cfn.Config(target, pipeline=pipeline_cfg).instantiate(), cfn.Config)
 
 
 def test_circular_wrapper_chain_does_not_spin():

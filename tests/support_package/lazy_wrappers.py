@@ -14,3 +14,8 @@ def passthrough(func):
         return func(*args, **kwargs)
 
     return wrapper
+
+
+def echo(pipeline):
+    """Unannotated, so a wrapper's declared signature is the only one there is."""
+    return pipeline

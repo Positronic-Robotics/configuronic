@@ -48,6 +48,15 @@ def resolving_target(pipeline: Pipeline):
     return pipeline
 
 
+# Module-level names defined in terms of each other: resolving one leads back to it.
+CYCLIC_ALIAS = 'OTHER_CYCLIC_ALIAS'
+OTHER_CYCLIC_ALIAS = 'CYCLIC_ALIAS'
+
+
+def cyclic_alias_spelling(pipeline: CYCLIC_ALIAS):
+    return pipeline
+
+
 class Server:
     """A class target whose `__init__` annotations are postponed too."""
 

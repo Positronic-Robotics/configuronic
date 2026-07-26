@@ -169,6 +169,21 @@ class BuiltByBrokenMeta(metaclass=lazy_broken_metaclass.BrokenAnnotationMeta):
         self.other = other
 
 
+class ForwardingMeta(type):
+    """Declares the same parameter as the constructor it forwards to, meaning the same."""
+
+    def __call__(cls, pipeline: C, host: str = 'localhost'):
+        return super().__call__(pipeline, host)
+
+
+class BuiltByForwardingMeta(metaclass=ForwardingMeta):
+    """Two rival declarations of `pipeline: C`, both written where `C` is `Config`."""
+
+    def __init__(self, pipeline: C, host: str = 'localhost'):
+        self.pipeline = pipeline
+        self.host = host
+
+
 class BuiltByMetaDeclaringTheSameParameter(metaclass=lazy_sibling_namespace.SameParameterMeta):
     """Declares `pipeline: C` too — identically to the metaclass that wrote the signature."""
 

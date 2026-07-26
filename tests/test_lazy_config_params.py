@@ -14,7 +14,7 @@ from typing import Annotated, Optional
 import pytest
 
 import configuronic as cfn
-from tests.support_package import lazy_annotations, lazy_declared_signature, lazy_wrappers
+from tests.support_package import lazy_annotations, lazy_declared_signature, lazy_rival_declarations, lazy_wrappers
 
 
 class Codec:
@@ -398,15 +398,30 @@ def test_annotation_is_not_resolved_in_a_sibling_namespace():
     assert isinstance(received, Pipeline)
 
 
-def test_identical_declaration_in_a_sibling_namespace_does_not_answer():
-    # The metaclass wrote `pipeline: C` and cannot resolve `C`; the class' own `__init__`
-    # declares an identical-looking parameter in a module where `C` *is* Config. Only the
-    # first candidate can be the one the signature came from, so `C` stays unresolved.
-    cfg = cfn.Config(lazy_annotations.BuiltByMetaDeclaringTheSameParameter, pipeline=pipeline_cfg)
+def test_rival_declarations_that_disagree_do_not_answer():
+    # Two candidates declare `pipeline: C` identically and mean different things by it:
+    # one resolves `C` to `Config`, the other cannot resolve it at all. Which of them the
+    # signature came from is CPython's business, so neither gets to decide — the config is
+    # built, as it is for any parameter that does not ask for one.
+    #
+    # Both orderings, because the answer must not depend on the order candidates are tried:
+    # the metaclass is the broken one in the first, the class' own `__init__` in the second.
+    metaclass_broken = cfn.Config(lazy_annotations.BuiltByMetaDeclaringTheSameParameter, pipeline=pipeline_cfg)
+    constructor_broken = cfn.Config(lazy_rival_declarations.BuiltByResolvableMeta, pipeline=pipeline_cfg)
 
-    received, _ = cfg.instantiate()
+    received, _ = metaclass_broken.instantiate()
 
     assert isinstance(received, Pipeline)
+    assert isinstance(constructor_broken.instantiate().pipeline, Pipeline)
+
+
+def test_rival_declarations_that_agree_still_answer():
+    # A metaclass forwarding to the constructor declares the same parameter, written in the
+    # same module and meaning the same thing. There is nothing to disagree about, so this
+    # is not a case for declining.
+    built = cfn.Config(lazy_annotations.BuiltByForwardingMeta, pipeline=pipeline_cfg).instantiate()
+
+    assert isinstance(built.pipeline, cfn.Config)
 
 
 def test_forward_reference_resolves_in_the_module_it_names():

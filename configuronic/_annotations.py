@@ -104,11 +104,18 @@ class _AnnotationSource(NamedTuple):
     ``localns`` is the body of the class the callable was defined in, if any: a name bound
     there is in scope for an annotation written there, which is how the same annotation
     resolves in a module that does *not* postpone evaluation.
+
+    ``rival`` says this callable is one of several that could have supplied the signature —
+    a class' metaclass ``__call__``, ``__new__`` and ``__init__` are rivals, and which of
+    them wins is CPython's business. Sources that are not rivals are the same declaration
+    reached in more than one way, such as a callable object and its class' ``__call__``:
+    they cannot contradict each other, they can only be more or less specific.
     """
 
     globalns: dict[str, Any]
     localns: Mapping[str, Any]
     parameters: dict[str, inspect.Parameter]
+    rival: bool = False
 
 
 def _declared_parameters(func: Any) -> dict[str, inspect.Parameter]:
@@ -178,14 +185,18 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
     a declared ``__signature__``, from a metaclass ``__call__``, from ``__new__`` or from
     ``__init__``, by rules that depend on which of them the class defines itself — so
     offer them all, most specific first, along with what each declares, and let
-    :func:`_sources_for` pick. Each can be decorated in turn, so each is followed the same
+    :func:`_scopes_for` pick. Each can be decorated in turn, so each is followed the same
     way. For a callable object the parameters come from its class' ``__call__``, which may
     be inherited from a base in another module; the object itself keeps no globals and
     falls back to the module its own class came from.
     """
     chain = _signature_chain(target)
     func = chain[-1]
-    if inspect.isclass(func):
+    # Only a class has rival declarations: one of its four candidates supplied the
+    # signature and the others did not. The two a non-class target offers are the same
+    # declaration reached differently.
+    rivals = inspect.isclass(func)
+    if rivals:
         # Each candidate is paired with the class body it was written in — the one that
         # defines it, which for an inherited method is a base rather than `func` itself.
         candidates = [
@@ -236,7 +247,7 @@ def _annotation_sources(target: Any) -> list[_AnnotationSource]:
             continue
         seen.append((globalns, defined_in))
         localns: Mapping[str, Any] = _class_namespace(defined_in) if defined_in is not None else {}
-        sources.append(_AnnotationSource(globalns, localns, _declared_parameters(candidate)))
+        sources.append(_AnnotationSource(globalns, localns, _declared_parameters(candidate), rivals))
     return sources
 
 
@@ -254,22 +265,39 @@ def _same_annotation(declared: Any, reported: Any) -> bool:
     return isinstance(declared, str) and isinstance(reported, str) and declared == reported
 
 
-def _sources_for(sources: list[_AnnotationSource], param: inspect.Parameter) -> list[_AnnotationSource]:
-    """Where this parameter's annotation may be resolved, most likely first.
+def _scopes_for(sources: list[_AnnotationSource], param: inspect.Parameter) -> list[list[_AnnotationSource]]:
+    """The scopes that get to answer for this parameter, every one of which must agree.
 
-    Only one of the candidates wrote this parameter, so the first that declares it — same
-    name, same annotation, candidates being ordered most specific first — is the one whose
-    namespace applies, and a name it cannot resolve is unresolved rather than something a
-    sibling namespace happens to define. Two candidates declaring the identical parameter
-    is not a reason to consult both: only the first can be the one the signature came from.
+    Only one of the candidates wrote this parameter, so one that declares it — same name,
+    same annotation — is the one whose namespace applies, and a name it cannot resolve is
+    unresolved rather than something a sibling namespace happens to define. Usually exactly
+    one declares it, and it answers alone.
+
+    When several *rivals* declare it identically, which of them the signature came from is
+    not knowable from here: the rules are CPython's, they turn on what the class defines
+    versus inherits, and restating them would risk resolving an ordinary annotation in the
+    wrong module. So each answers on its own and the parameter only asks for the marker if
+    they agree. Disagreement means the answer would rest on which candidate was guessed, so
+    the config is built instead — what happens for every parameter that does not ask, and
+    the safer way to be wrong: a target handed an object it did not expect fails where it
+    is called, while one handed a config it did not expect fails somewhere inside itself.
+    Sources that are not rivals cannot disagree in that sense, so the most specific answers
+    and the rest stand behind it.
+
     When none of them declares it (a callable with an explicit ``__signature__``, say)
-    there is nothing to go on, so offer them all.
+    there is nothing to go on, so they answer together, the first to resolve it winning.
     """
-    for source in sources:
-        declared = source.parameters.get(param.name)
-        if declared is not None and _same_annotation(declared.annotation, param.annotation):
-            return [source]
-    return sources
+    declaring = [
+        source
+        for source in sources
+        if (declared := source.parameters.get(param.name)) is not None
+        and _same_annotation(declared.annotation, param.annotation)
+    ]
+    if not declaring:
+        return [sources]
+    if len(declaring) > 1 and all(source.rival for source in declaring):
+        return [[source] for source in declaring]
+    return [[declaring[0]]]
 
 
 def _module_source(module: Any) -> list[_AnnotationSource]:
@@ -314,7 +342,7 @@ class _Resolution(NamedTuple):
 
     ``marker`` is the class a parameter asks for by being annotated with it. ``sources``
     are the namespaces a stringified annotation may be resolved in, from
-    :func:`_sources_for`. ``followed`` carries what has already been followed on the way
+    :func:`_scopes_for`. ``followed`` carries what has already been followed on the way
     here — annotation strings, and the identities of ``type`` aliases and type parameters
     — because any of them can be written in terms of itself, and nothing that comes round
     again is the marker. ``bound`` carries what the arguments of a specialized alias
@@ -477,8 +505,12 @@ class _Declaration:
             try:
                 if self._sources is None:
                     self._sources = _annotation_sources(self._target)
-                sources = _sources_for(self._sources, param)
-                answer = _Resolution(self._marker, sources).wants_marker(param.annotation)
+                # Every scope that could have written the parameter has to agree, so an
+                # answer that rests on which candidate was guessed is declined.
+                answer = all(
+                    _Resolution(self._marker, scope).wants_marker(param.annotation)
+                    for scope in _scopes_for(self._sources, param)
+                )
             except Exception:
                 answer = False
             self._answered[param.name] = answer

@@ -4,6 +4,7 @@
 
 ### Changed
 - **Behaviour:** a parameter annotated `cfn.Config` is no longer resolved before the target is called. A target that already had such a parameter and relied on `instantiate()` building the config passed to it now receives the config itself, with no error — both are ordinary values. Annotate the parameter with the type it is built into (or leave it unannotated) to keep the previous behaviour.
+- **Performance:** `instantiate()` reads the target's signature on every call, since a target is free to change what it declares and an answer kept from an earlier reading is wrong in a way nothing reveals. Building a config node now costs tens of microseconds where it cost single-digit microseconds, and a couple of hundred for a target whose annotations are postponed (`from __future__ import annotations`) and have to be resolved as text. This applies to every config, not only those with an annotated parameter.
 - `override()`, `override_data()` and `Config.__call__()` take `self` positionally, so `self` is usable as an override key. Previously `override_data(**{'self': ...})` — reachable wherever the keys come from outside the process — raised `TypeError` instead of being applied or reported as a `ConfigError`.
 
 ### Added
